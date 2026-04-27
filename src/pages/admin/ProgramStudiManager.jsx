@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, Trash2, GraduationCap, Loader2, X, AlertTriangle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 export default function ProgramStudiManager() {
   const [list,    setList]    = useState([])
@@ -10,6 +11,7 @@ export default function ProgramStudiManager() {
   const [form,    setForm]    = useState({ name: '', code: '' })
   const [saving,  setSaving]  = useState(false)
   const [deleting, setDeleting] = useState(null)  // id being deleted
+  const { confirmDialog, showConfirm } = useConfirm()
 
   useEffect(() => { fetchList() }, [])
 
@@ -41,7 +43,13 @@ export default function ProgramStudiManager() {
   }
 
   async function handleDelete(id, name) {
-    if (!confirm(`Hapus "${name}"? Pengguna yang terdaftar di prodi ini tidak akan terhapus.`)) return
+    const ok = await showConfirm({
+      title: 'Hapus Program Studi?',
+      message: `Hapus "${name}"? Pengguna yang terdaftar di prodi ini tidak akan ikut terhapus.`,
+      confirmLabel: 'Ya, Hapus',
+      variant: 'danger',
+    })
+    if (!ok) return
     setDeleting(id)
     const { error } = await supabase.from('program_studi').delete().eq('id', id)
     if (error) toast.error('Gagal menghapus')
@@ -50,6 +58,8 @@ export default function ProgramStudiManager() {
   }
 
   return (
+    <>
+    {confirmDialog}
     <div>
       <div className="page-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
         <div>
@@ -190,5 +200,6 @@ export default function ProgramStudiManager() {
         </div>
       )}
     </div>
+    </>
   )
 }

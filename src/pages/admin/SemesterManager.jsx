@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 const PERIOD_LABEL = { ganjil: 'Ganjil', genap: 'Genap' }
 const EMPTY = { name:'', year: new Date().getFullYear(), period:'ganjil', started_at:'', ended_at:'' }
@@ -15,6 +16,7 @@ export default function SemesterManager() {
   const [showForm, setShowForm] = useState(false)
   const [form,     setForm]     = useState(EMPTY)
   const [saving,   setSaving]   = useState(false)
+  const { confirmDialog, showConfirm } = useConfirm()
 
   useEffect(() => { fetchAll() }, [])
 
@@ -43,7 +45,13 @@ export default function SemesterManager() {
   }
 
   async function handleActivate(sem) {
-    if (!confirm(`Aktifkan "${sem.name}"? Semester aktif lain akan dinonaktifkan otomatis.`)) return
+    const ok = await showConfirm({
+      title: `Aktifkan Semester?`,
+      message: `Semester "${sem.name}" akan diaktifkan. Semester aktif lainnya akan dinonaktifkan secara otomatis.`,
+      confirmLabel: 'Ya, Aktifkan',
+      variant: 'warning',
+    })
+    if (!ok) return
     // Nonaktifkan semua, lalu aktifkan yang dipilih
     await supabase.from('semesters').update({ is_active: false }).neq('id', sem.id)
     const { error } = await supabase.from('semesters').update({
@@ -56,7 +64,13 @@ export default function SemesterManager() {
   }
 
   async function handleClose(sem) {
-    if (!confirm(`Tutup semester "${sem.name}"? Poin tidak akan bertambah lagi pada semester ini.`)) return
+    const ok = await showConfirm({
+      title: 'Tutup Semester?',
+      message: `Semester "${sem.name}" akan ditutup. Poin tidak akan bertambah lagi setelah ini.`,
+      confirmLabel: 'Ya, Tutup',
+      variant: 'warning',
+    })
+    if (!ok) return
     const { error } = await supabase.from('semesters').update({
       is_active: false,
       ended_at:  new Date().toISOString(),
@@ -67,7 +81,13 @@ export default function SemesterManager() {
   }
 
   async function handleDelete(sem) {
-    if (!confirm(`Hapus semester "${sem.name}"? Data poin yang terkait juga akan dihapus!`)) return
+    const ok = await showConfirm({
+      title: 'Hapus Semester?',
+      message: `Hapus semester "${sem.name}"? Semua data poin terkait akan ikut terhapus dan tidak dapat dipulihkan.`,
+      confirmLabel: 'Ya, Hapus',
+      variant: 'danger',
+    })
+    if (!ok) return
     const { error } = await supabase.from('semesters').delete().eq('id', sem.id)
     if (error) { toast.error('Gagal menghapus'); return }
     toast.success('Semester dihapus')
@@ -82,6 +102,8 @@ export default function SemesterManager() {
   const pending   = inactive.filter(s => !s.ended_at)
 
   return (
+    <>
+    {confirmDialog}
     <div>
       <div className="page-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
         <div>
@@ -180,6 +202,7 @@ export default function SemesterManager() {
 
       {loading && <div className="spinner" style={{ margin:'40px auto' }}/>}
     </div>
+    </>
   )
 }
 

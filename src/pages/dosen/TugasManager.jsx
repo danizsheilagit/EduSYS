@@ -4,6 +4,7 @@ import { ClipboardList, Plus, Edit2, Trash2, X, Loader2, ChevronDown, Clock, Use
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 const BLANK = { title: '', description: '', max_score: 100, due_date: '', allow_late_submission: false }
 const fmt = iso => iso ? new Date(iso).toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'
@@ -327,6 +328,7 @@ function GradingPanel({ assignment, onClose }) {
 /* ── Main Component ─────────────────────────────────────────── */
 export default function DosenTugasManager() {
   const { user } = useAuth()
+  const { confirmDialog, showConfirm } = useConfirm()
   const [searchParams] = useSearchParams()
   const [courses,     setCourses]     = useState([])
   const [courseId,    setCourseId]    = useState('')
@@ -378,7 +380,13 @@ export default function DosenTugasManager() {
   }
 
   async function handleDelete(id) {
-    if (!confirm('Hapus tugas ini? Semua pengumpulan akan ikut terhapus.')) return
+    const ok = await showConfirm({
+      title: 'Hapus Tugas?',
+      message: 'Semua pengumpulan mahasiswa akan ikut terhapus. Tindakan ini tidak bisa dibatalkan.',
+      confirmLabel: 'Ya, Hapus',
+      variant: 'danger',
+    })
+    if (!ok) return
     await supabase.from('assignments').delete().eq('id', id)
     toast('Tugas dihapus', { icon:'🗑️' })
     fetchAssignments()
@@ -394,6 +402,8 @@ export default function DosenTugasManager() {
   }
 
   return (
+    <>
+    {confirmDialog}
     <div>
       <div className="page-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
         <div>
@@ -531,5 +541,6 @@ export default function DosenTugasManager() {
         </div>
       )}
     </div>
+    </>
   )
 }

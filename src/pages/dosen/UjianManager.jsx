@@ -3,6 +3,7 @@ import { FileQuestion, Plus, Edit2, Trash2, X, Loader2, ChevronDown, Clock, Eye,
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 const EXAM_MODES = [
@@ -20,6 +21,7 @@ function fmt(iso) {
 
 export default function DosenUjianManager() {
   const { user } = useAuth()
+  const { confirmDialog, showConfirm } = useConfirm()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [courses,  setCourses]  = useState([])
@@ -155,7 +157,13 @@ export default function DosenUjianManager() {
   }
 
   async function handleDelete(id) {
-    if (!confirm('Hapus ujian ini? Semua jawaban mahasiswa akan ikut terhapus.')) return
+    const ok = await showConfirm({
+      title: 'Hapus Ujian?',
+      message: 'Semua jawaban mahasiswa akan ikut terhapus. Tindakan ini tidak bisa dibatalkan.',
+      confirmLabel: 'Ya, Hapus',
+      variant: 'danger',
+    })
+    if (!ok) return
     await supabase.from('exams').delete().eq('id', id)
     toast('Ujian dihapus', { icon: '🗑️' })
     fetchExams()
@@ -177,6 +185,8 @@ export default function DosenUjianManager() {
   }
 
   return (
+    <>
+    {confirmDialog}
     <div>
       <div className="page-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
         <div>
@@ -504,5 +514,6 @@ export default function DosenUjianManager() {
         </div>
       )}
     </div>
+    </>
   )
 }

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, Trash2, Search, Loader2, X, GraduationCap } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 export default function AdminEnrollment() {
   const [courses,   setCourses]   = useState([])
@@ -11,6 +12,7 @@ export default function AdminEnrollment() {
   const [search,    setSearch]    = useState('')
   const [loading,   setLoading]   = useState(false)
   const [adding,    setAdding]    = useState(false)
+  const { confirmDialog, showConfirm } = useConfirm()
 
   useEffect(() => {
     supabase.from('courses').select('id,code,name').order('name').then(({data}) => setCourses(data||[]))
@@ -39,7 +41,13 @@ export default function AdminEnrollment() {
   }
 
   async function handleRemove(enrollId, name) {
-    if (!confirm(`Hapus ${name} dari mata kuliah ini?`)) return
+    const ok = await showConfirm({
+      title: 'Hapus Peserta?',
+      message: `Hapus ${name} dari mata kuliah ini? Data nilai dan pengumpulan tidak akan terhapus.`,
+      confirmLabel: 'Ya, Hapus',
+      variant: 'warning',
+    })
+    if (!ok) return
     await supabase.from('enrollments').delete().eq('id', enrollId)
     toast('Enrollment dihapus', { icon:'🗑️' })
     fetchEnrolled()
@@ -51,6 +59,8 @@ export default function AdminEnrollment() {
   ).filter(s => !enrolledIds.has(s.id))
 
   return (
+    <>
+    {confirmDialog}
     <div>
       <div className="page-header">
         <h1 className="page-title">Enrollment Mahasiswa</h1>
@@ -123,5 +133,6 @@ export default function AdminEnrollment() {
         </div>
       )}
     </div>
+    </>
   )
 }

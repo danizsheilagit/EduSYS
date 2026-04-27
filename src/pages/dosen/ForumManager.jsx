@@ -4,6 +4,7 @@ import { MessageSquare, Plus, Trash2, X, Loader2, ChevronDown, Pin, MessageCircl
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 const BLANK = { title: '', body: '', is_pinned: false }
 
@@ -21,6 +22,7 @@ export default function DosenForumManager() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const { confirmDialog, showConfirm } = useConfirm()
   const [courses,  setCourses]  = useState([])
   const [courseId, setCourseId] = useState('')
   const [forums,   setForums]   = useState([])
@@ -70,13 +72,21 @@ export default function DosenForumManager() {
   }
 
   async function handleDelete(id) {
-    if (!confirm('Hapus topik diskusi ini? Semua balasan akan ikut terhapus.')) return
+    const ok = await showConfirm({
+      title: 'Hapus Topik Diskusi?',
+      message: 'Semua balasan dalam topik ini akan ikut terhapus. Tindakan ini tidak bisa dibatalkan.',
+      confirmLabel: 'Ya, Hapus',
+      variant: 'danger',
+    })
+    if (!ok) return
     await supabase.from('forums').delete().eq('id', id)
     toast('Topik dihapus', { icon: '🗑️' })
     fetchForums()
   }
 
   return (
+    <>
+    {confirmDialog}
     <div>
       <div className="page-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
         <div>
@@ -221,5 +231,6 @@ export default function DosenForumManager() {
         </div>
       )}
     </div>
+    </>
   )
 }

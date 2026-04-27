@@ -4,6 +4,7 @@ import { Database, Plus, Edit2, Trash2, X, Loader2, ChevronDown, Search, Upload,
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 const DIFFICULTIES = [
   { value: 'mudah',  label: 'Mudah',  bg: '#dcfce7', color: '#16a34a' },
@@ -29,6 +30,7 @@ function DiffBadge({ value }) {
 
 export default function BankSoal() {
   const { user } = useAuth()
+  const { confirmDialog, showConfirm } = useConfirm()
   const [searchParams] = useSearchParams()
   const [courses,   setCourses]   = useState([])
   const [courseId,  setCourseId]  = useState('')
@@ -195,7 +197,13 @@ export default function BankSoal() {
   }
 
   async function handleDelete(id) {
-    if (!confirm('Hapus soal ini dari bank soal?')) return
+    const ok = await showConfirm({
+      title: 'Hapus Soal?',
+      message: 'Soal ini akan dihapus dari bank soal secara permanen.',
+      confirmLabel: 'Ya, Hapus',
+      variant: 'danger',
+    })
+    if (!ok) return
     await supabase.from('questions').delete().eq('id', id)
     toast('Soal dihapus', { icon: '🗑️' })
     setSelectedIds(prev => { const s = new Set(prev); s.delete(id); return s })
@@ -228,7 +236,13 @@ export default function BankSoal() {
 
   async function handleBulkDelete() {
     if (!selectedIds.size) return
-    if (!confirm(`Hapus ${selectedIds.size} soal yang dipilih? Tindakan ini tidak bisa dibatalkan.`)) return
+    const ok = await showConfirm({
+      title: `Hapus ${selectedIds.size} Soal?`,
+      message: `${selectedIds.size} soal yang dipilih akan dihapus permanen dari bank soal. Tindakan ini tidak bisa dibatalkan.`,
+      confirmLabel: 'Ya, Hapus Semua',
+      variant: 'danger',
+    })
+    if (!ok) return
     const ids = [...selectedIds]
     const { error } = await supabase.from('questions').delete().in('id', ids)
     if (error) { toast.error('Gagal menghapus: ' + error.message); return }
@@ -273,6 +287,8 @@ export default function BankSoal() {
   }
 
   return (
+    <>
+    {confirmDialog}
     <div>
       <div className="page-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
         <div>
@@ -641,5 +657,6 @@ export default function BankSoal() {
         </div>
       )}
     </div>
+    </>
   )
 }

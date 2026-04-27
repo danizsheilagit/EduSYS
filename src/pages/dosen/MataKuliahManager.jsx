@@ -3,6 +3,7 @@ import { Plus, BookOpen, Users, Edit2, Trash2, Loader2, X } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 const COLORS   = ['#4f46e5','#7c3aed','#0ea5e9','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4']
 const SEMESTERS = ['Ganjil 2025/2026','Genap 2025/2026','Ganjil 2026/2027']
@@ -11,6 +12,7 @@ const BLANK_FORM = { code:'', name:'', description:'', credits:3, semester: SEME
 
 export default function DosenMataKuliah() {
   const { user, isAdmin } = useAuth()
+  const { confirmDialog, showConfirm } = useConfirm()
 
   const [courses,   setCourses]   = useState([])
   const [dosenList, setDosenList] = useState([])   // untuk pilihan dosen (admin only)
@@ -104,7 +106,13 @@ export default function DosenMataKuliah() {
   }
 
   async function handleDelete(id) {
-    if (!confirm('Hapus mata kuliah ini? Semua data terkait (tugas, ujian, forum) akan terhapus.')) return
+    const ok = await showConfirm({
+      title: 'Hapus Mata Kuliah?',
+      message: 'Semua data terkait (tugas, ujian, materi, forum) akan dihapus permanen. Tindakan ini tidak bisa dibatalkan.',
+      confirmLabel: 'Ya, Hapus',
+      variant: 'danger',
+    })
+    if (!ok) return
     const { error } = await supabase.from('courses').delete().eq('id', id)
     if (error) toast.error('Gagal menghapus')
     else { toast.success('Mata kuliah dihapus'); fetchCourses() }
@@ -116,6 +124,8 @@ export default function DosenMataKuliah() {
     : `${courses.length} mata kuliah Anda`
 
   return (
+    <>
+    {confirmDialog}
     <div>
       <div className="page-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
         <div>
@@ -243,5 +253,6 @@ export default function DosenMataKuliah() {
         </div>
       )}
     </div>
+    </>
   )
 }

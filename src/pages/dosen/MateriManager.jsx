@@ -4,6 +4,7 @@ import { BookMarked, Plus, Trash2, Edit2, X, Loader2, ExternalLink, ChevronDown,
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 // ── Attachment type definitions ────────────────────────────────
 const ATTACH_TYPES = [
@@ -88,6 +89,7 @@ function AttachRow({ attach, idx, onChange, onRemove, canRemove }) {
 export default function DosenMateriManager() {
   const { user } = useAuth()
   const [searchParams] = useSearchParams()
+  const { confirmDialog, showConfirm } = useConfirm()
   const [courses,   setCourses]   = useState([])
   const [courseId,  setCourseId]  = useState('')
   const [materials, setMaterials] = useState([])
@@ -179,7 +181,13 @@ export default function DosenMateriManager() {
   }
 
   async function handleDelete(id) {
-    if (!confirm('Hapus materi ini?')) return
+    const ok = await showConfirm({
+      title: 'Hapus Materi?',
+      message: 'Materi dan semua file terkait akan dihapus. Tindakan ini tidak bisa dibatalkan.',
+      confirmLabel: 'Ya, Hapus',
+      variant: 'danger',
+    })
+    if (!ok) return
     await supabase.from('materials').delete().eq('id', id)
     toast('Materi dihapus', { icon: '🗑️' })
     fetchMaterials()
@@ -194,6 +202,8 @@ export default function DosenMateriManager() {
   }, {})
 
   return (
+    <>
+    {confirmDialog}
     <div>
       <div className="page-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
         <div>
@@ -352,5 +362,6 @@ export default function DosenMateriManager() {
         </div>
       )}
     </div>
+    </>
   )
 }

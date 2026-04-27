@@ -6,6 +6,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import toast from 'react-hot-toast'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 const EMPTY_FORM = {
   title:'', content:'', type:'global', course_id:'', image_url:'',
@@ -14,6 +15,7 @@ const EMPTY_FORM = {
 
 export default function AdminAnnouncements() {
   const { user } = useAuth()
+  const { confirmDialog, showConfirm } = useConfirm()
   const [list,     setList]     = useState([])
   const [courses,  setCourses]  = useState([])
   const [loading,  setLoading]  = useState(true)
@@ -110,7 +112,13 @@ export default function AdminAnnouncements() {
     fetchAll()
   }
   async function handleDelete(id) {
-    if (!confirm('Hapus pengumuman ini?')) return
+    const ok = await showConfirm({
+      title: 'Hapus Pengumuman?',
+      message: 'Pengumuman ini akan dihapus dari seluruh tampilan pengguna. Tindakan ini tidak bisa dibatalkan.',
+      confirmLabel: 'Ya, Hapus',
+      variant: 'danger',
+    })
+    if (!ok) return
     await supabase.from('announcements').delete().eq('id', id)
     toast.success('Dihapus')
     fetchAll()
@@ -119,6 +127,8 @@ export default function AdminAnnouncements() {
   function f(field, val) { setForm(p => ({ ...p, [field]: val })) }
 
   return (
+    <>
+    {confirmDialog}
     <div>
       <div className="page-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
         <div>
@@ -294,5 +304,6 @@ export default function AdminAnnouncements() {
         </div>
       )}
     </div>
+    </>
   )
 }
