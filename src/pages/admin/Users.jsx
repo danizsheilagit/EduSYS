@@ -1,19 +1,26 @@
 import { useState, useEffect } from 'react'
-import { Users, Search, Edit2, Loader2, X, Shield } from 'lucide-react'
+import { Users, Search, Edit2, Loader2, X, Shield, CheckSquare, Square, ChevronDown, UserCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 import toast from 'react-hot-toast'
 
 const ROLES = ['mahasiswa','dosen','admin','guest']
 const ROLE_COLORS = { admin:'badge-red', dosen:'badge-amber', mahasiswa:'badge-indigo', guest:'badge-slate' }
+const ROLE_LABELS = { mahasiswa:'Mahasiswa', dosen:'Dosen', admin:'Admin', guest:'Guest' }
 
 export default function AdminUsers() {
-  const [users,     setUsers]     = useState([])
-  const [prodiList, setProdiList] = useState([])
-  const [search,    setSearch]    = useState('')
-  const [loading,   setLoading]   = useState(true)
-  const [editing,   setEditing]   = useState(null)
-  const [saving,    setSaving]    = useState(false)
-  const [editForm,  setEditForm]  = useState({})
+  const [users,       setUsers]       = useState([])
+  const [prodiList,   setProdiList]   = useState([])
+  const [search,      setSearch]      = useState('')
+  const [filterRole,  setFilterRole]  = useState('')
+  const [loading,     setLoading]     = useState(true)
+  const [editing,     setEditing]     = useState(null)
+  const [saving,      setSaving]      = useState(false)
+  const [editForm,    setEditForm]    = useState({})
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [bulkRole,    setBulkRole]    = useState('mahasiswa')
+  const [bulkSaving,  setBulkSaving]  = useState(false)
+  const { confirmDialog, showConfirm } = useConfirm()
 
   useEffect(() => { fetchUsers(); fetchProdi() }, [])
 
@@ -28,6 +35,7 @@ export default function AdminUsers() {
     setProdiList(data || [])
   }
 
+  // ── Single edit ─────────────────────────────────────────────────
   async function handleSave() {
     setSaving(true)
     const { error } = await supabase.from('profiles').update({
@@ -38,24 +46,77 @@ export default function AdminUsers() {
       role:          editForm.role,
     }).eq('id', editing.id)
     if (error) {
-      console.error('[EduSYS] update profile error:', error)
       toast.error(`Gagal menyimpan: ${error.message}`)
     } else {
       toast.success('Profil berhasil diperbarui')
-      fetchUsers()
-      setEditing(null)
+      fetchUsers(); setEditing(null)
     }
     setSaving(false)
   }
 
-  const filtered = users.filter(u =>
-    !search ||
-    u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
-    u.email?.toLowerCase().includes(search.toLowerCase()) ||
-    u.nim?.includes(search)
-  )
+  // ── Bulk change role ─────────────────────────────────────────────
+  async function handleBulkChangeRole() {
+    if (!selectedIds.size) return
+    const selectedNames = filtered.filter(u => selectedIds.has(u.id)).map(u => u.full_name || u.email).slice(0,3)
+    const more = selectedIds.size > 3 ? ` +${selectedIds.size - 3} lainnya` : ''
+    const ok = await showConfirm({
+      title: `Ubah Role ${selectedIds.size} Pengguna?`,
+      message: `${selectedNames.join(', ')}${more} akan diubah menjadi role "${ROLE_LABELS[bulkRole]}". Tindakan ini mempengaruhi akses sistem mereka.`,
+      confirmLabel: `Ya, Ubah ke ${ROLE_LABELS[bulkRole]}`,
+      variant: 'warning',
+    })
+    if (!ok) return
+
+    setBulkSaving(true)
+    const ids = [...selectedIds]
+    const updates = ids.map(id => supabase.from('profiles').update({ role: bulkRole }).eq('id', id))
+    const results = await Promise.all(updates)
+    const failed = results.filter(r => r.error)
+    if (failed.length) {
+      toast.error(`${failed.length} pengguna gagal diupdate`)
+    } else {
+      toast.success(`${ids.length} pengguna berhasil diubah ke role "${ROLE_LABELS[bulkRole]}"`)
+      setSelectedIds(new Set())
+    }
+    setBulkSaving(false)
+    fetchUsers()
+  }
+
+  // ── Selection helpers ────────────────────────────────────────────
+  function toggleSelect(id) {
+    setSelectedIds(prev => {
+      const s = new Set(prev)
+      s.has(id) ? s.delete(id) : s.add(id)
+      return s
+    })
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === filtered.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(filtered.map(u => u.id)))
+    }
+  }
+
+  const filtered = users.filter(u => {
+    const matchSearch = !search ||
+      u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
+      u.email?.toLowerCase().includes(search.toLowerCase()) ||
+      u.nim?.includes(search) || u.nidn?.includes(search)
+    const matchRole = !filterRole || u.role === filterRole
+    return matchSearch && matchRole
+  })
+
+  const allSelected = filtered.length > 0 && selectedIds.size === filtered.length
+  const someSelected = selectedIds.size > 0 && selectedIds.size < filtered.length
+
+  // Role count badges for filter bar
+  const roleCounts = ROLES.reduce((acc, r) => ({ ...acc, [r]: users.filter(u => u.role === r).length }), {})
 
   return (
+    <>
+    {confirmDialog}
     <div>
       <div className="page-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
         <div>
@@ -64,57 +125,199 @@ export default function AdminUsers() {
         </div>
       </div>
 
+      {/* ── Bulk Action Bar (muncul saat ada yang dipilih) ─────── */}
+      {selectedIds.size > 0 && (
+        <div style={{
+          background:'linear-gradient(135deg, #4f46e5, #7c3aed)',
+          borderRadius:12, padding:'12px 18px', marginBottom:16,
+          display:'flex', alignItems:'center', gap:12, flexWrap:'wrap',
+          boxShadow:'0 4px 20px rgba(79,70,229,.3)',
+          animation:'slideUp .2s ease',
+        }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, color:'white' }}>
+            <UserCheck size={16}/>
+            <span style={{ fontWeight:700, fontSize:14 }}>{selectedIds.size} pengguna dipilih</span>
+          </div>
+
+          <div style={{ height:20, width:1, background:'rgba(255,255,255,.3)' }}/>
+
+          <div style={{ display:'flex', alignItems:'center', gap:8, flex:1, flexWrap:'wrap' }}>
+            <span style={{ fontSize:13, color:'rgba(255,255,255,.8)' }}>Ubah role ke:</span>
+            <div style={{ position:'relative' }}>
+              <select
+                value={bulkRole}
+                onChange={e => setBulkRole(e.target.value)}
+                style={{
+                  padding:'6px 32px 6px 12px', borderRadius:8, border:'1px solid rgba(255,255,255,.4)',
+                  background:'rgba(255,255,255,.15)', color:'white', fontSize:13, fontWeight:700,
+                  cursor:'pointer', appearance:'none', outline:'none',
+                }}
+              >
+                {ROLES.map(r => (
+                  <option key={r} value={r} style={{ background:'#4f46e5', color:'white' }}>
+                    {ROLE_LABELS[r]}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={12} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', color:'white', pointerEvents:'none' }}/>
+            </div>
+
+            <button
+              onClick={handleBulkChangeRole}
+              disabled={bulkSaving}
+              style={{
+                padding:'6px 16px', borderRadius:8, border:'2px solid rgba(255,255,255,.6)',
+                background:'white', color:'#4f46e5', fontSize:13, fontWeight:700,
+                cursor:'pointer', display:'flex', alignItems:'center', gap:6, transition:'all .12s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.9)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'white' }}
+            >
+              {bulkSaving ? <Loader2 size={13} style={{ animation:'spin .7s linear infinite' }}/> : <Shield size={13}/>}
+              Terapkan
+            </button>
+          </div>
+
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            style={{ background:'rgba(255,255,255,.15)', border:'none', borderRadius:6, padding:'5px 12px', color:'white', fontSize:12, cursor:'pointer', fontWeight:600 }}
+          >
+            Batal pilih
+          </button>
+        </div>
+      )}
+
       <div className="card">
-        <div style={{ padding:'14px 16px', borderBottom:'1px solid var(--gray-100)', display:'flex', alignItems:'center', gap:10 }}>
-          <div style={{ position:'relative', flex:1, maxWidth:320 }}>
+        {/* ── Toolbar: Search + Filter Role ─────────────────────── */}
+        <div style={{ padding:'14px 16px', borderBottom:'1px solid var(--gray-100)', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+          <div style={{ position:'relative', flex:1, minWidth:200 }}>
             <Search size={13} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--gray-400)' }}/>
-            <input className="input" style={{ paddingLeft:32 }} placeholder="Cari nama, email, NIM…" value={search} onChange={e => setSearch(e.target.value)}/>
+            <input className="input" style={{ paddingLeft:32 }} placeholder="Cari nama, email, NIM, NIDN…" value={search} onChange={e => setSearch(e.target.value)}/>
+          </div>
+
+          {/* Filter chip by role */}
+          <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+            <button
+              onClick={() => setFilterRole('')}
+              style={{
+                padding:'5px 12px', borderRadius:99, fontSize:12, fontWeight:600, cursor:'pointer',
+                background: !filterRole ? 'var(--indigo-600)' : 'var(--gray-100)',
+                color:      !filterRole ? 'white'              : 'var(--gray-600)',
+                border:'none', transition:'all .12s',
+              }}
+            >
+              Semua ({users.length})
+            </button>
+            {ROLES.map(r => (
+              <button
+                key={r}
+                onClick={() => setFilterRole(prev => prev === r ? '' : r)}
+                style={{
+                  padding:'5px 12px', borderRadius:99, fontSize:12, fontWeight:600, cursor:'pointer',
+                  background: filterRole === r ? 'var(--indigo-600)' : 'var(--gray-100)',
+                  color:      filterRole === r ? 'white'              : 'var(--gray-600)',
+                  border:'none', transition:'all .12s',
+                }}
+              >
+                {ROLE_LABELS[r]} ({roleCounts[r] || 0})
+              </button>
+            ))}
           </div>
         </div>
 
         {loading ? (
           <div style={{ padding:32, display:'flex', justifyContent:'center' }}><div className="spinner"/></div>
+        ) : filtered.length === 0 ? (
+          <div className="empty-state" style={{ padding:40 }}>
+            <Users size={32} color="var(--gray-300)"/>
+            <p className="empty-state-text">Tidak ada pengguna ditemukan</p>
+          </div>
         ) : (
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
             <thead>
               <tr style={{ background:'var(--gray-50)', borderBottom:'1px solid var(--gray-200)' }}>
+                {/* Checkbox select-all */}
+                <th style={{ padding:'10px 12px 10px 16px', width:40 }}>
+                  <button
+                    onClick={toggleSelectAll}
+                    style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', color: allSelected ? 'var(--indigo-600)' : 'var(--gray-400)', padding:0 }}
+                    title={allSelected ? 'Batalkan semua' : 'Pilih semua'}
+                  >
+                    {allSelected
+                      ? <CheckSquare size={16} color="var(--indigo-600)"/>
+                      : someSelected
+                        ? <CheckSquare size={16} color="var(--indigo-400)" style={{ opacity:.6 }}/>
+                        : <Square size={16}/>
+                    }
+                  </button>
+                </th>
                 {['Pengguna','Role','NIM/NIDN','Program Studi','Aksi'].map(h => (
                   <th key={h} style={{ padding:'10px 16px', textAlign:'left', fontSize:11, fontWeight:700, color:'var(--gray-500)', textTransform:'uppercase' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {filtered.map((u, i) => (
-                <tr key={u.id} style={{ borderBottom: i < filtered.length-1 ? '1px solid var(--gray-100)' : 'none' }}>
-                  <td style={{ padding:'12px 16px' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                      <div className="avatar" style={{ width:30, height:30, fontSize:12 }}>
-                        {u.avatar_url ? <img src={u.avatar_url} alt=""/> : u.full_name?.[0]||'U'}
+              {filtered.map((u, i) => {
+                const isSelected = selectedIds.has(u.id)
+                return (
+                  <tr
+                    key={u.id}
+                    style={{
+                      borderBottom: i < filtered.length-1 ? '1px solid var(--gray-100)' : 'none',
+                      background: isSelected ? '#eef2ff' : 'transparent',
+                      transition: 'background .1s',
+                    }}
+                  >
+                    {/* Checkbox */}
+                    <td style={{ padding:'12px 12px 12px 16px' }}>
+                      <button
+                        onClick={() => toggleSelect(u.id)}
+                        style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', padding:0 }}
+                      >
+                        {isSelected
+                          ? <CheckSquare size={16} color="var(--indigo-600)"/>
+                          : <Square size={16} color="var(--gray-300)"/>
+                        }
+                      </button>
+                    </td>
+                    <td style={{ padding:'12px 16px' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                        <div className="avatar" style={{ width:30, height:30, fontSize:12 }}>
+                          {u.avatar_url ? <img src={u.avatar_url} alt=""/> : u.full_name?.[0]||'U'}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight:600, fontSize:13 }}>{u.full_name||'–'}</div>
+                          <div style={{ fontSize:11, color:'var(--gray-400)' }}>{u.email}</div>
+                        </div>
                       </div>
-                      <div>
-                        <div style={{ fontWeight:600, fontSize:13 }}>{u.full_name||'–'}</div>
-                        <div style={{ fontSize:11, color:'var(--gray-400)' }}>{u.email}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td style={{ padding:'12px 16px' }}>
-                    <span className={`badge-pill ${ROLE_COLORS[u.role]||'badge-slate'}`}>{u.role}</span>
-                  </td>
-                  <td style={{ padding:'12px 16px', fontSize:12, color:'var(--gray-600)' }}>{u.nim||u.nidn||'–'}</td>
-                  <td style={{ padding:'12px 16px', fontSize:12, color:'var(--gray-600)' }}>{u.program_studi||'–'}</td>
-                  <td style={{ padding:'12px 16px' }}>
-                    <button className="btn btn-ghost btn-icon btn-sm" onClick={() => { setEditing(u); setEditForm({...u}) }}>
-                      <Edit2 size={13}/>
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td style={{ padding:'12px 16px' }}>
+                      <span className={`badge-pill ${ROLE_COLORS[u.role]||'badge-slate'}`}>{u.role}</span>
+                    </td>
+                    <td style={{ padding:'12px 16px', fontSize:12, color:'var(--gray-600)' }}>{u.nim||u.nidn||'–'}</td>
+                    <td style={{ padding:'12px 16px', fontSize:12, color:'var(--gray-600)' }}>{u.program_studi||'–'}</td>
+                    <td style={{ padding:'12px 16px' }}>
+                      <button className="btn btn-ghost btn-icon btn-sm" onClick={() => { setEditing(u); setEditForm({...u}) }} title="Edit pengguna">
+                        <Edit2 size={13}/>
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}
+
+        {/* Footer count */}
+        {!loading && filtered.length > 0 && (
+          <div style={{ padding:'10px 16px', borderTop:'1px solid var(--gray-100)', fontSize:12, color:'var(--gray-400)', display:'flex', justifyContent:'space-between' }}>
+            <span>Menampilkan {filtered.length} dari {users.length} pengguna</span>
+            {selectedIds.size > 0 && <span style={{ color:'var(--indigo-600)', fontWeight:600 }}>{selectedIds.size} dipilih</span>}
+          </div>
+        )}
       </div>
 
-      {/* Edit Modal */}
+      {/* ── Edit Single User Modal ─────────────────────────────── */}
       {editing && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setEditing(null)}>
           <div className="modal">
@@ -134,59 +337,29 @@ export default function AdminUsers() {
                 <label className="input-label">Role</label>
                 <select className="input" value={editForm.role} onChange={e => {
                   const newRole = e.target.value
-                  setEditForm(f => ({
-                    ...f,
-                    role: newRole,
-                    // Kosongkan field yang tidak relevan saat role berubah
-                    nim:  newRole === 'mahasiswa' ? f.nim  : '',
-                    nidn: newRole === 'dosen'     ? f.nidn : '',
-                  }))
+                  setEditForm(f => ({ ...f, role: newRole, nim: newRole === 'mahasiswa' ? f.nim : '', nidn: newRole === 'dosen' ? f.nidn : '' }))
                 }}>
-                  {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                  {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                 </select>
                 <span className="input-hint">Mengubah role akan mempengaruhi akses sistem</span>
               </div>
               <div className="form-grid form-grid-2">
-                {/* NIM — aktif hanya untuk mahasiswa */}
                 <div className="input-group">
-                  <label className="input-label" style={{ color: editForm.role !== 'mahasiswa' ? 'var(--gray-300)' : undefined }}>
-                    NIM
-                  </label>
-                  <input
-                    className="input"
-                    placeholder="Untuk mahasiswa"
-                    value={editForm.nim || ''}
-                    disabled={editForm.role !== 'mahasiswa'}
-                    style={editForm.role !== 'mahasiswa'
-                      ? { background:'var(--gray-50)', color:'var(--gray-300)', cursor:'not-allowed' }
-                      : {}}
-                    onChange={e => setEditForm(f => ({...f, nim: e.target.value}))}
-                  />
+                  <label className="input-label" style={{ color: editForm.role !== 'mahasiswa' ? 'var(--gray-300)' : undefined }}>NIM</label>
+                  <input className="input" placeholder="Untuk mahasiswa" value={editForm.nim || ''} disabled={editForm.role !== 'mahasiswa'}
+                    style={editForm.role !== 'mahasiswa' ? { background:'var(--gray-50)', color:'var(--gray-300)', cursor:'not-allowed' } : {}}
+                    onChange={e => setEditForm(f => ({...f, nim: e.target.value}))}/>
                 </div>
-                {/* NIDN/NUPTK — aktif hanya untuk dosen */}
                 <div className="input-group">
-                  <label className="input-label" style={{ color: editForm.role !== 'dosen' ? 'var(--gray-300)' : undefined }}>
-                    NIDN/NUPTK
-                  </label>
-                  <input
-                    className="input"
-                    placeholder="Untuk dosen"
-                    value={editForm.nidn || ''}
-                    disabled={editForm.role !== 'dosen'}
-                    style={editForm.role !== 'dosen'
-                      ? { background:'var(--gray-50)', color:'var(--gray-300)', cursor:'not-allowed' }
-                      : {}}
-                    onChange={e => setEditForm(f => ({...f, nidn: e.target.value}))}
-                  />
+                  <label className="input-label" style={{ color: editForm.role !== 'dosen' ? 'var(--gray-300)' : undefined }}>NIDN/NUPTK</label>
+                  <input className="input" placeholder="Untuk dosen" value={editForm.nidn || ''} disabled={editForm.role !== 'dosen'}
+                    style={editForm.role !== 'dosen' ? { background:'var(--gray-50)', color:'var(--gray-300)', cursor:'not-allowed' } : {}}
+                    onChange={e => setEditForm(f => ({...f, nidn: e.target.value}))}/>
                 </div>
               </div>
               <div className="input-group">
                 <label className="input-label">Program Studi</label>
-                <select
-                  className="input"
-                  value={editForm.program_studi || ''}
-                  onChange={e => setEditForm(f => ({...f, program_studi: e.target.value}))}
-                >
+                <select className="input" value={editForm.program_studi || ''} onChange={e => setEditForm(f => ({...f, program_studi: e.target.value}))}>
                   <option value="">— Pilih Program Studi —</option>
                   {prodiList.map(p => (
                     <option key={p.id} value={p.name}>{p.name}{p.code ? ` (${p.code})` : ''}</option>
@@ -204,5 +377,6 @@ export default function AdminUsers() {
         </div>
       )}
     </div>
+    </>
   )
 }
