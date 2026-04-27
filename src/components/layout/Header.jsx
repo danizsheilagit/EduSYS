@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Search, Bell, Settings, LogOut, User,
   ChevronDown, KeyRound, Sparkles, PanelLeftOpen, PanelLeftClose,
-  Sun, Moon
+  Sun, Moon, CheckCheck, Megaphone, BookOpen, ClipboardList
 } from 'lucide-react'
 import { useAuth }    from '@/contexts/AuthContext'
 import { useAI }      from '@/contexts/AIContext'
@@ -11,19 +11,38 @@ import { useTheme }   from '@/contexts/ThemeContext'
 import { useSidebar } from './AppLayout'
 import AISettingsModal from '@/components/ai/AISettingsModal'
 import GlobalSearch   from './GlobalSearch'
+import { supabase }   from '@/lib/supabase'
 
 const LOGO_URL = 'https://i.ibb.co.com/kgV7WDhF/Logo-SYS.png'
 
+function timeAgo(iso) {
+  if (!iso) return ''
+  const m = Math.floor((Date.now() - new Date(iso)) / 60000)
+  if (m < 1)    return 'Baru saja'
+  if (m < 60)   return `${m} mnt lalu`
+  if (m < 1440) return `${Math.floor(m/60)} jam lalu`
+  return `${Math.floor(m/1440)} hari lalu`
+}
+
+const NOTIF_ICON = {
+  announcement: { icon: Megaphone,     color: '#4f46e5', bg: '#eef2ff' },
+  assignment:   { icon: ClipboardList, color: '#f59e0b', bg: '#fffbeb' },
+  grade:        { icon: BookOpen,      color: '#10b981', bg: '#f0fdf4' },
+  default:      { icon: Bell,          color: '#6b7280', bg: '#f9fafb' },
+}
+
 export default function Header() {
-  const { profile, signOut } = useAuth()
-  const { setChatOpen }      = useAI()
-  const { open, toggle }     = useSidebar()
-  const { theme, toggleTheme } = useTheme()
-  const navigate             = useNavigate()
+  const { profile, signOut, user } = useAuth()
+  const { setChatOpen }            = useAI()
+  const { open, toggle }           = useSidebar()
+  const { theme, toggleTheme }     = useTheme()
+  const navigate                   = useNavigate()
 
   const [dropOpen,  setDropOpen]  = useState(false)
   const [aiModal,   setAiModal]   = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
+  const [notifs,    setNotifs]    = useState([])
+  const [notifLoading, setNotifLoading] = useState(false)
   const dropRef  = useRef(null)
   const notifRef = useRef(null)
 
@@ -37,9 +56,108 @@ export default function Header() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  // Fetch notifications
+  const fetchNotifs = useCallback(async () => {
+    if (!user || !profile) return
+    setNotifLoading(true)
+
+    const items = []
+    const role = profile.role
+
+    // 1. Recent active announcements (semua role)
+    const { data: ann } = await supabase
+      .from('announcements')
+      .select('id, title, type, created_at')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(5)
+
+    ;(ann || []).forEach(a => items.push({
+      id:   `ann-${a.id}`,
+      type: 'announcement',
+      text: a.title,
+      sub:  a.type === 'global' ? 'Pengumuman Global' : 'Pengumuman',
+      time: a.created_at,
+    }))
+
+    // 2. Mahasiswa: tugas baru dinilai (score baru-baru ini)
+    if (role === 'mahasiswa') {
+      const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+      const { data: graded } = await supabase
+        .from('submissions')
+        .select('id, score, updated_at, assignment:assignments(title)')
+        .eq('student_id', user.id)
+        .not('score', 'is', null)
+        .gte('updated_at', since)
+        .order('updated_at', { ascending: false })
+        .limit(5)
+
+      ;(graded || []).forEach(s => items.push({
+        id:   `grade-${s.id}`,
+        type: 'grade',
+        text: `Nilai masuk: ${s.assignment?.title || 'Tugas'}`,
+        sub:  `Nilai: ${s.score}`,
+        time: s.updated_at,
+      }))
+
+      // Tugas baru (assignment baru dari enrollment)
+      const { data: newAsgn } = await supabase
+        .from('assignments')
+        .select('id, title, due_date, created_at, course:courses!inner(id,code, enrollments!inner(student_id))')
+        .eq('course.enrollments.student_id', user.id)
+        .gte('created_at', new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())
+        .order('created_at', { ascending: false })
+        .limit(3)
+        .catch(() => ({ data: null }))
+
+      ;(newAsgn || []).forEach(a => items.push({
+        id:   `asgn-${a.id}`,
+        type: 'assignment',
+        text: `Tugas baru: ${a.title}`,
+        sub:  a.due_date ? `Deadline ${new Date(a.due_date).toLocaleDateString('id-ID',{day:'numeric',month:'short'})}` : 'Segera kerjakan',
+        time: a.created_at,
+      }))
+    }
+
+    // 3. Dosen: submission baru belum dinilai
+    if (role === 'dosen') {
+      const { data: pending } = await supabase
+        .from('submissions')
+        .select('id, submitted_at, student:profiles(full_name), assignment:assignments!inner(title,course:courses!inner(dosen_id))')
+        .eq('assignment.course.dosen_id', user.id)
+        .is('score', null)
+        .order('submitted_at', { ascending: false })
+        .limit(5)
+        .catch(() => ({ data: null }))
+
+      ;(pending || []).forEach(s => items.push({
+        id:   `sub-${s.id}`,
+        type: 'assignment',
+        text: `Pengumpulan baru: ${s.assignment?.title || 'Tugas'}`,
+        sub:  `Dari ${s.student?.full_name || 'Mahasiswa'} · belum dinilai`,
+        time: s.submitted_at,
+      }))
+    }
+
+    // Sort by time descending, max 8
+    items.sort((a, b) => new Date(b.time) - new Date(a.time))
+    setNotifs(items.slice(0, 8))
+    setNotifLoading(false)
+  }, [user, profile])
+
+  // Load notif saat pertama dan saat panel dibuka
+  useEffect(() => { if (user && profile) fetchNotifs() }, [fetchNotifs])
+
+  function handleOpenNotif() {
+    setNotifOpen(v => !v)
+    if (!notifOpen) fetchNotifs()
+  }
+
   const initials = profile?.full_name
     ? profile.full_name.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase()
     : 'U'
+
+  const unreadCount = notifs.length
 
   return (
     <>
@@ -76,23 +194,85 @@ export default function Header() {
             <Sparkles size={16} color="var(--indigo-600)" />
           </button>
 
-          {/* Notifications */}
+          {/* ── Notifications ───────────────────────────────── */}
           <div ref={notifRef} style={{ position: 'relative' }}>
             <button
               className="btn btn-ghost btn-icon"
-              onClick={() => setNotifOpen(v => !v)}
+              onClick={handleOpenNotif}
               title="Notifikasi"
+              style={{ position: 'relative' }}
             >
               <Bell size={16} />
+              {unreadCount > 0 && (
+                <span style={{
+                  position:'absolute', top:4, right:4,
+                  minWidth:16, height:16, borderRadius:99,
+                  background:'#ef4444', color:'white',
+                  fontSize:9, fontWeight:700,
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  padding:'0 4px', lineHeight:1,
+                  boxShadow:'0 0 0 2px var(--bg-page)',
+                }}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </button>
+
             {notifOpen && (
-              <div className="dropdown-menu" style={{ width: 280 }}>
-                <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--gray-100)' }}>
-                  <strong style={{ fontSize: 13 }}>Notifikasi</strong>
+              <div className="dropdown-menu" style={{ width: 320, maxHeight: 420, display:'flex', flexDirection:'column' }}>
+                {/* Header */}
+                <div style={{ padding:'12px 16px', borderBottom:'1px solid var(--gray-100)', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+                  <strong style={{ fontSize:13 }}>Notifikasi</strong>
+                  {notifs.length > 0 && (
+                    <span style={{ fontSize:11, fontWeight:700, color:'var(--indigo-600)', cursor:'pointer' }}
+                      onClick={() => setNotifs([])}>
+                      Tandai semua dibaca
+                    </span>
+                  )}
                 </div>
-                <div className="empty-state" style={{ padding: '24px' }}>
-                  <Bell size={22} color="var(--gray-300)" />
-                  <span className="empty-state-text">Belum ada notifikasi</span>
+
+                {/* Body */}
+                <div style={{ overflowY:'auto', flex:1 }}>
+                  {notifLoading ? (
+                    <div style={{ padding:32, display:'flex', justifyContent:'center' }}>
+                      <div className="spinner"/>
+                    </div>
+                  ) : notifs.length === 0 ? (
+                    <div className="empty-state" style={{ padding:'28px 16px' }}>
+                      <Bell size={28} color="var(--gray-300)" />
+                      <span className="empty-state-text" style={{ fontSize:12 }}>Belum ada notifikasi</span>
+                    </div>
+                  ) : (
+                    notifs.map(n => {
+                      const meta = NOTIF_ICON[n.type] || NOTIF_ICON.default
+                      const IconComp = meta.icon
+                      return (
+                        <div key={n.id} style={{
+                          display:'flex', alignItems:'flex-start', gap:12,
+                          padding:'12px 16px', borderBottom:'1px solid var(--gray-50)',
+                          cursor:'pointer', transition:'background .1s',
+                        }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'var(--gray-50)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                        >
+                          <div style={{
+                            width:34, height:34, borderRadius:10, flexShrink:0,
+                            background: meta.bg, display:'flex', alignItems:'center', justifyContent:'center',
+                          }}>
+                            <IconComp size={15} color={meta.color}/>
+                          </div>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontSize:12, fontWeight:600, color:'var(--gray-800)', marginBottom:2, lineHeight:1.4 }}>
+                              {n.text}
+                            </div>
+                            <div style={{ fontSize:11, color:'var(--gray-400)' }}>{n.sub}</div>
+                            <div style={{ fontSize:10, color:'var(--gray-300)', marginTop:3 }}>{timeAgo(n.time)}</div>
+                          </div>
+                          <div style={{ width:7, height:7, borderRadius:'50%', background:'var(--indigo-500)', flexShrink:0, marginTop:4 }}/>
+                        </div>
+                      )
+                    })
+                  )}
                 </div>
               </div>
             )}

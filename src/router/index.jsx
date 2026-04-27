@@ -39,8 +39,9 @@ import AdminAnnouncements  from '@/pages/admin/Announcements'
 import SemesterManager     from '@/pages/admin/SemesterManager'
 
 // ── Shared ───────────────────────────────────────────────────
-import ForumDetail       from '@/pages/shared/ForumDetail'
+import ForumDetail      from '@/pages/shared/ForumDetail'
 import AcademicCalendar from '@/pages/shared/AcademicCalendar'
+import ProfilePage      from '@/pages/shared/ProfilePage'
 import NotFound         from '@/pages/NotFound'
 
 // ── Protected Route ──────────────────────────────────────────
@@ -127,6 +128,7 @@ export default function AppRouter() {
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
             <Route path="/dashboard"          element={<SmartDashboard />} />
+            <Route path="/profile"            element={<ProfilePage />} />
             <Route path="/mata-kuliah"         element={<SmartMataKuliah />} />
             <Route path="/mata-kuliah/:id"     element={<CourseDetail />} />
             <Route path="/materi"              element={<SmartMateri />} />
