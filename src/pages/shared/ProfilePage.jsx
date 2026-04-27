@@ -89,12 +89,12 @@ export default function ProfilePage() {
   const [prodiList, setProdiList] = useState([])
   const [stats,     setStats]     = useState({ totalXp:0, submissions:0, materialViews:0, forumPosts:0, courses:0, perfectScore:false })
   const [activity,  setActivity]  = useState([])
-  const [loadStats, setLoadStats] = useState(true)
+  const [statsLoading, setStatsLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const fileRef = useRef()
 
   useEffect(() => {
-    if (profile) { setForm({ ...profile }); loadStats() }
+    if (profile) { setForm({ ...profile }); fetchStats() }
   }, [profile])
 
   useEffect(() => {
@@ -102,9 +102,9 @@ export default function ProfilePage() {
       .then(({ data }) => setProdiList(data || []))
   }, [])
 
-  async function loadStats() {
+  async function fetchStats() {
     if (!user) return
-    setLoadStats(true)
+    setStatsLoading(true)
     const [xpRes, subRes, mvRes, fpRes, crRes, perfRes, actRes] = await Promise.all([
       // Total XP
       supabase.from('points_log').select('points').eq('user_id', user.id),
@@ -132,7 +132,7 @@ export default function ProfilePage() {
       perfectScore:  (perfRes.data || []).length > 0,
     })
     setActivity(actRes.data || [])
-    setLoadStats(false)
+    setStatsLoading(false)
   }
 
   async function handleAvatarChange(e) {
@@ -295,7 +295,7 @@ export default function ProfilePage() {
           ].map(s => (
             <div key={s.label} className="card" style={{ padding:'16px', textAlign:'center' }}>
               <div style={{ fontSize:22, marginBottom:4 }}>{s.icon}</div>
-              <div style={{ fontSize:22, fontWeight:800, color:s.color }}>{loadStats ? '…' : s.value}</div>
+              <div style={{ fontSize:22, fontWeight:800, color:s.color }}>{statsLoading ? '…' : s.value}</div>
               <div style={{ fontSize:11, color:'var(--gray-400)', fontWeight:600 }}>{s.label}</div>
             </div>
           ))}
@@ -390,7 +390,7 @@ export default function ProfilePage() {
                 <strong style={{ fontSize:14 }}>Aktivitas XP Terbaru</strong>
               </div>
               <div style={{ padding:'12px 20px', display:'flex', flexDirection:'column', gap:8 }}>
-                {loadStats ? (
+                {statsLoading ? (
                   <div style={{ padding:16, display:'flex', justifyContent:'center' }}><div className="spinner"/></div>
                 ) : activity.length === 0 ? (
                   <div style={{ textAlign:'center', padding:16, fontSize:12, color:'var(--gray-400)' }}>

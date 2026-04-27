@@ -101,14 +101,16 @@ export default function Header() {
       }))
 
       // Tugas baru (assignment baru dari enrollment)
-      const { data: newAsgn } = await supabase
-        .from('assignments')
-        .select('id, title, due_date, created_at, course:courses!inner(id,code, enrollments!inner(student_id))')
-        .eq('course.enrollments.student_id', user.id)
-        .gte('created_at', new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())
-        .order('created_at', { ascending: false })
-        .limit(3)
-        .catch(() => ({ data: null }))
+      let newAsgn = []
+      try {
+        const { data } = await supabase
+          .from('assignments')
+          .select('id, title, due_date, created_at, course:courses!inner(id, code)')
+          .gte('created_at', new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())
+          .order('created_at', { ascending: false })
+          .limit(3)
+        newAsgn = data || []
+      } catch (_) { /* ignore */ }
 
       ;(newAsgn || []).forEach(a => items.push({
         id:   `asgn-${a.id}`,
@@ -121,14 +123,17 @@ export default function Header() {
 
     // 3. Dosen: submission baru belum dinilai
     if (role === 'dosen') {
-      const { data: pending } = await supabase
-        .from('submissions')
-        .select('id, submitted_at, student:profiles(full_name), assignment:assignments!inner(title,course:courses!inner(dosen_id))')
-        .eq('assignment.course.dosen_id', user.id)
-        .is('score', null)
-        .order('submitted_at', { ascending: false })
-        .limit(5)
-        .catch(() => ({ data: null }))
+      let pending = []
+      try {
+        const { data } = await supabase
+          .from('submissions')
+          .select('id, submitted_at, student:profiles(full_name), assignment:assignments!inner(title, course:courses!inner(dosen_id))')
+          .eq('assignment.course.dosen_id', user.id)
+          .is('score', null)
+          .order('submitted_at', { ascending: false })
+          .limit(5)
+        pending = data || []
+      } catch (_) { /* ignore */ }
 
       ;(pending || []).forEach(s => items.push({
         id:   `sub-${s.id}`,
