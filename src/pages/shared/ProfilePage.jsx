@@ -94,7 +94,10 @@ export default function ProfilePage() {
   const fileRef = useRef()
 
   useEffect(() => {
-    if (profile) { setForm({ ...profile }); fetchStats() }
+    if (profile) {
+      setForm({ ...profile })
+      if (profile.role === 'mahasiswa') fetchStats()
+    }
   }, [profile])
 
   useEffect(() => {
