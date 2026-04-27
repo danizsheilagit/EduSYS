@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { MessageSquare, Plus, Trash2, X, Loader2, ChevronDown, Pin, MessageCircle } from 'lucide-react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
+import { MessageSquare, Plus, Trash2, X, Loader2, ChevronDown, Pin, MessageCircle, ExternalLink } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
@@ -19,6 +19,7 @@ function timeAgo(iso) {
 
 export default function DosenForumManager() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [courses,  setCourses]  = useState([])
   const [courseId, setCourseId] = useState('')
@@ -112,7 +113,16 @@ export default function DosenForumManager() {
       ) : (
         <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
           {forums.map(f => (
-            <div key={f.id} className="card" style={{ padding:'14px 18px', borderLeft: f.is_pinned ? '3px solid var(--indigo-500)' : undefined }}>
+            <div key={f.id} className="card"
+              onClick={() => navigate(`/forum/${f.id}`)}
+              style={{
+                padding:'14px 18px',
+                borderLeft: f.is_pinned ? '3px solid var(--indigo-500)' : undefined,
+                cursor:'pointer', transition:'box-shadow .15s'
+              }}
+              onMouseEnter={e => e.currentTarget.style.boxShadow='0 2px 12px rgba(99,102,241,.12)'}
+              onMouseLeave={e => e.currentTarget.style.boxShadow='none'}
+            >
               <div style={{ display:'flex', alignItems:'flex-start', gap:12 }}>
                 <div style={{
                   width:36, height:36, borderRadius:8, overflow:'hidden', flexShrink:0,
@@ -146,7 +156,15 @@ export default function DosenForumManager() {
                     <span>{timeAgo(f.created_at)}</span>
                   </div>
                 </div>
-                <div style={{ display:'flex', gap:6, flexShrink:0 }}>
+                <div style={{ display:'flex', gap:6, flexShrink:0 }} onClick={e => e.stopPropagation()}>
+                  <button
+                    className="btn btn-ghost btn-icon btn-sm"
+                    title="Buka diskusi"
+                    onClick={() => navigate(`/forum/${f.id}`)}
+                    style={{ color:'var(--indigo-600)' }}
+                  >
+                    <ExternalLink size={13}/>
+                  </button>
                   <button
                     className="btn btn-ghost btn-icon btn-sm"
                     title={f.is_pinned ? 'Lepas sematkan' : 'Sematkan'}
