@@ -22,7 +22,6 @@ export default function AnnouncementManager() {
   const [imgFile,   setImgFile]   = useState(null)
   const [imgPrev,   setImgPrev]   = useState('')
   const [uploading, setUploading] = useState(false)
-  const { confirmDialog, showConfirm } = useConfirm()
   const fileRef = useRef()
 
   useEffect(() => { fetchAll() }, [user])
