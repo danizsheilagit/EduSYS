@@ -104,6 +104,16 @@ function getProg(uid)           { try { return JSON.parse(localStorage.getItem(`
 function saveProg(uid, key, st) { const d = getProg(uid); d[key] = { ...d[key], ...st }; localStorage.setItem(`edusys_mp_${uid}`, JSON.stringify(d)) }
 function pkey(mid, i)           { return `${mid}_${i}` }
 
+// ── Persistensi timer & done per lampiran ────────────────────────────────
+// Timer: simpan kapan lampiran pertama kali dibuka (epoch ms)
+function timerKey(uid, mid, i)   { return `edusys_tmr_${uid}_${mid}_${i}` }
+function getOpenedAt(uid,mid,i)  { return parseInt(localStorage.getItem(timerKey(uid,mid,i)) || '0') }
+function saveOpenedAt(uid,mid,i) { if (!getOpenedAt(uid,mid,i)) localStorage.setItem(timerKey(uid,mid,i), String(Date.now())) }
+// Done set: track per lampiran yang sudah selesai
+function doneKey(uid)            { return `edusys_done_v2_${uid}` }
+function getDoneSet(uid)         { try { return new Set(JSON.parse(localStorage.getItem(doneKey(uid)) || '[]')) } catch { return new Set() } }
+function saveDone(uid, refId)    { const s = getDoneSet(uid); s.add(refId); localStorage.setItem(doneKey(uid), JSON.stringify([...s])) }
+
 function getYouTubeId(url = '') {
   // Handle all YouTube URL formats
   const patterns = [
@@ -162,7 +172,10 @@ function CountdownRing({ seconds }) {
 /* ── Single attachment row ───────────────────────────────────── */
 function AttachItem({ attach, matId, idx, userId, isCompleted, onMarkDone, onUpdate, onFirstOpen }) {
   const [open,      setOpen]      = useState(false)
-  const [countdown, setCountdown] = useState(COUNTDOWN_SEC)
+  // Init countdown dari localStorage — lanjutkan dari sisa waktu sebelumnya
+  const elapsed0   = isCompleted ? 0 : Math.floor((Date.now() - (getOpenedAt(userId, matId, idx) || Date.now())) / 1000)
+  const initCd     = isCompleted ? 0 : Math.max(0, COUNTDOWN_SEC - elapsed0)
+  const [countdown, setCountdown] = useState(initCd)
   const timerRef = useRef(null)
   const [, tick]   = useState(0)
   const rerender   = () => tick(n => n + 1)
@@ -180,10 +193,9 @@ function AttachItem({ attach, matId, idx, userId, isCompleted, onMarkDone, onUpd
     selesai: { label:'✓ Selesai',         color:'#16a34a',         bg:'#dcfce7',         dot:'#16a34a' },
   }[status]
 
-  // Start/stop 3-min countdown when expanded
+  // Start/stop countdown — lanjutkan dari sisa waktu (bukan reset ke 180)
   useEffect(() => {
-    if (open && !isCompleted) {
-      setCountdown(COUNTDOWN_SEC)
+    if (open && !isCompleted && countdown > 0) {
       timerRef.current = setInterval(() => {
         setCountdown(c => {
           if (c <= 1) { clearInterval(timerRef.current); return 0 }
@@ -203,7 +215,14 @@ function AttachItem({ attach, matId, idx, userId, isCompleted, onMarkDone, onUpd
     if (next && !prog.opened) {
       saveProg(userId, key, { opened: true, openedAt: Date.now() })
       rerender(); onUpdate?.()
-      onFirstOpen?.()
+    }
+    if (next && !isCompleted) {
+      // Simpan waktu pertama buka ke localStorage (tidak overwrite jika sudah ada)
+      saveOpenedAt(userId, matId, idx)
+      // Recalculate remaining dari openedAt yang tersimpan
+      const elapsed = Math.floor((Date.now() - getOpenedAt(userId, matId, idx)) / 1000)
+      const remaining = Math.max(0, COUNTDOWN_SEC - elapsed)
+      setCountdown(remaining)
     }
   }
 
@@ -344,26 +363,33 @@ function MateriTab({ courseId, userId }) {
   const rerender  = () => tick(n => n + 1)
 
   useEffect(() => {
-    // Reset localStorage jika versi lama (hapus progress completed)
+    // Reset localStorage lama (versi sebelumnya)
     if (localStorage.getItem('edusys_mat_ver') !== STORAGE_VER) {
-      Object.keys(localStorage).filter(k => k.startsWith('edusys_mp_')).forEach(k => localStorage.removeItem(k))
+      Object.keys(localStorage).filter(k => k.startsWith('edusys_mp_') || k.startsWith('edusys_tmr_')).forEach(k => localStorage.removeItem(k))
       localStorage.setItem('edusys_mat_ver', STORAGE_VER)
     }
-    // Load materials + completed refs dari points_log
-    Promise.all([
-      supabase.from('materials').select('*').eq('course_id', courseId).order('week_number').order('created_at'),
-      supabase.from('points_log').select('reference_id').eq('user_id', userId).eq('source', 'materi'),
-    ]).then(([{ data: mats }, { data: ptLog }]) => {
-      setItems(mats || [])
-      setCompletedRefs(new Set((ptLog || []).map(p => p.reference_id).filter(Boolean)))
-      setLoading(false)
-    })
+    // Load completedRefs dari localStorage (persisten)
+    setCompletedRefs(getDoneSet(userId))
+    // Load materials saja dari DB
+    supabase.from('materials').select('*').eq('course_id', courseId)
+      .order('week_number').order('created_at')
+      .then(({ data: mats }) => {
+        setItems(mats || [])
+        setLoading(false)
+      })
   }, [courseId])
 
   // Called when mahasiswa klik "Selesai Dipelajari" pada suatu lampiran
   async function handleMarkDone(materialId, attachIdx) {
     const refId = `mat_${materialId}_${attachIdx}`
     if (completedRefs.has(refId)) return  // sudah selesai
+
+    // 1. Simpan ke localStorage dulu (langsung update UI)
+    saveDone(userId, refId)
+    setCompletedRefs(getDoneSet(userId))
+    toast.success('+3 pts ⭐ Lampiran berhasil dipelajari!', { duration: 2500 })
+
+    // 2. Insert ke DB (background) — reference_id = materialId (UUID valid)
     const { data: sem } = await supabase.from('semesters').select('id').eq('is_active', true).maybeSingle()
     const { error } = await supabase.from('points_log').insert({
       user_id:      userId,
@@ -371,13 +397,14 @@ function MateriTab({ courseId, userId }) {
       semester_id:  sem?.id || null,
       points:       3,
       source:       'materi',
-      reason:       `Selesai lampiran ${attachIdx + 1}`,
-      reference_id: refId,
+      reason:       `Selesai lampiran ${attachIdx + 1} materi ${materialId}`,
+      reference_id: materialId,   // UUID valid — bukan string 'mat_xxx_0'
     })
-    if (!error) {
-      setCompletedRefs(prev => new Set([...prev, refId]))
-      toast.success('+3 pts ⭐ Lampiran berhasil dipelajari!', { duration: 2500 })
-      // Upsert material_views agar fitur cetak & analitik tetap berfungsi
+    if (error) {
+      console.error('points_log insert error:', error)
+      // Poin tetap tercatat di localStorage meski DB gagal
+    } else {
+      // Upsert material_views agar fitur cetak & analitik berfungsi
       supabase.from('material_views').upsert(
         { material_id: materialId, student_id: userId, semester_id: sem?.id || null, points_awarded: true },
         { onConflict: 'material_id,student_id' }
@@ -416,7 +443,8 @@ function MateriTab({ courseId, userId }) {
           {/* Material cards */}
           {mats.map(m => {
             const links     = (m.attachments?.length) ? m.attachments : m.webview_link ? [{ mime:m.mime_type, url:m.webview_link, label:'' }] : []
-            const doneCount = links.filter((_,i) => completedRefs.has(`mat_${m.id}_${i}`)).length
+            const doneSet   = getDoneSet(userId)   // baca langsung dari localStorage
+            const doneCount = links.filter((_,i) => doneSet.has(`mat_${m.id}_${i}`)).length
             const prog      = getProg(userId)
             const openCount = links.filter((_,i) => prog[pkey(m.id,i)]?.opened).length
             const pct       = links.length > 0 ? Math.round(doneCount / links.length * 100) : 0
