@@ -26,6 +26,14 @@ function genCode() {
   return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
 }
 
+// Konversi ISO string ke format datetime-local input (YYYY-MM-DDTHH:mm)
+function toDatetimeLocal(isoStr) {
+  if (!isoStr) return ''
+  const d = new Date(isoStr)
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export default function AttendanceManager() {
   const { user } = useAuth()
   const [searchParams] = useSearchParams()
@@ -113,7 +121,12 @@ export default function AttendanceManager() {
 
   function openEditSession(s) {
     setEditSession(s)
-    setEditForm({ title: s.title, meeting_number: s.meeting_number, extend_minutes: 0 })
+    setEditForm({
+      title:          s.title,
+      meeting_number: s.meeting_number,
+      extend_minutes: 0,
+      created_at:     toDatetimeLocal(s.created_at), // format for <input type="datetime-local">
+    })
   }
 
   async function saveEditSession() {
@@ -122,6 +135,11 @@ export default function AttendanceManager() {
     const updates = {
       title:          editForm.title.trim(),
       meeting_number: editForm.meeting_number,
+    }
+    // Update tanggal sesi jika diubah
+    if (editForm.created_at) {
+      const newDate = new Date(editForm.created_at)
+      if (!isNaN(newDate.getTime())) updates.created_at = newDate.toISOString()
     }
     if (editForm.extend_minutes > 0) {
       const wasExpired = isExpired(editSession)
@@ -386,10 +404,9 @@ export default function AttendanceManager() {
             </div>
             <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:14 }}>
 
-              {/* Info sesi sumber */}
+              {/* Info kode sesi */}
               <div style={{ background:'var(--gray-50)', borderRadius:8, padding:'8px 12px', fontSize:12, color:'var(--gray-500)', border:'1px solid var(--gray-200)' }}>
-                Sesi dibuat: {new Date(editSession.created_at).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'})}
-                {' · Kode: '}<strong style={{ fontFamily:'monospace', color:'var(--indigo-600)' }}>{editSession.code}</strong>
+                Kode Sesi: <strong style={{ fontFamily:'monospace', color:'var(--indigo-600)' }}>{editSession.code}</strong>
               </div>
 
               <div>
@@ -402,6 +419,34 @@ export default function AttendanceManager() {
                 <input className="input" type="number" min={1} max={99}
                   value={editForm.meeting_number}
                   onChange={e => setEditForm(f => ({...f, meeting_number: +e.target.value}))}/>
+              </div>
+
+              {/* ── Tanggal & Jam Sesi ───────────────────────────────── */}
+              <div>
+                <label className="label" style={{ display:'flex', alignItems:'center', gap:6 }}>
+                  📅 Tanggal &amp; Jam Sesi
+                  <span style={{ fontSize:10, fontWeight:400, color:'var(--gray-400)' }}>(untuk rekap &amp; jurnal)</span>
+                </label>
+                <input
+                  className="input"
+                  type="datetime-local"
+                  value={editForm.created_at}
+                  max={toDatetimeLocal(new Date().toISOString())}
+                  onChange={e => setEditForm(f => ({...f, created_at: e.target.value}))}
+                  style={{ cursor:'pointer' }}
+                />
+                {editForm.created_at && editForm.created_at !== toDatetimeLocal(editSession.created_at) && (
+                  <div style={{ fontSize:11, color:'var(--indigo-600)', marginTop:4, display:'flex', alignItems:'center', gap:4 }}>
+                    ⚠️ Diubah dari:{' '}
+                    <strong>
+                      {new Date(editSession.created_at).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'})}
+                    </strong>
+                    {' → '}
+                    <strong>
+                      {new Date(editForm.created_at).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'})}
+                    </strong>
+                  </div>
+                )}
               </div>
 
               {/* Perpanjang / buka kembali */}
