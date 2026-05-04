@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Megaphone, ExternalLink } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { queryCache } from '@/lib/queryCache'
 import { useAuth } from '@/contexts/AuthContext'
 
 
@@ -27,10 +28,17 @@ export default function AnnouncementCarousel({ showManage = false, managePath = 
   useEffect(() => { if (user) fetchAnnouncements() }, [user])
 
   async function fetchAnnouncements() {
-    const { data } = await supabase.from('announcements')
-      .select('*, author:profiles(full_name), course:courses(name,code)')
-      .order('priority', { ascending: false })
-      .order('created_at', { ascending: false })
+    const data = await queryCache.get(
+      'announcements',
+      () => supabase
+        .from('announcements')
+        .select('*, author:profiles(full_name), course:courses(name,code)')
+        .eq('is_active', true)
+        .order('priority', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(10),
+      5 * 60 * 1000  // cache 5 menit
+    )
     setSlides(data || [])
     setLoading(false)
   }

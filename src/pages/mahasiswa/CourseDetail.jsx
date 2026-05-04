@@ -339,6 +339,7 @@ function MateriTab({ courseId, userId }) {
       setLoading(false)
 
       // Retroactive: klaim poin untuk materi yang sudah dibuka via localStorage tapi belum ada di DB
+      // OPTIMIZED: 1 batch upsert + 1 batch insert (bukan N×2 queries)
       const prog = getProg(userId)
       const opened = (mats || []).filter(m => {
         const links = (m.attachments?.length) ? m.attachments : m.webview_link ? [{ mime:m.mime_type, url:m.webview_link, label:'' }] : []
@@ -348,22 +349,27 @@ function MateriTab({ courseId, userId }) {
       if (opened.length > 0) {
         supabase.from('semesters').select('id').eq('is_active', true).single().then(({ data: sem }) => {
           if (!sem) return
-          opened.forEach(m => {
-            supabase.from('material_views').upsert({
-              material_id: m.id, student_id: userId,
-              semester_id: sem.id, points_awarded: true,
-            }, { onConflict: 'material_id,student_id' }).then(({ error }) => {
-              if (!error) {
-                supabase.from('points_log').insert({
-                  user_id: userId, course_id: courseId, semester_id: sem.id,
-                  points: 5, source: 'materi',
-                  reason: 'Buka materi: ' + m.id, reference_id: m.id,
-                }).then(() => {
-                  setViews(prev => ({ ...prev, [m.id]: { points_awarded: true } }))
-                })
-              }
+          // Satu batch upsert untuk semua material_views
+          const viewRows = opened.map(m => ({
+            material_id: m.id, student_id: userId,
+            semester_id: sem.id, points_awarded: true,
+          }))
+          supabase.from('material_views')
+            .upsert(viewRows, { onConflict: 'material_id,student_id' })
+            .then(({ error }) => {
+              if (error) return
+              // Satu batch insert untuk semua points_log
+              const ptRows = opened.map(m => ({
+                user_id: userId, course_id: courseId, semester_id: sem.id,
+                points: 5, source: 'materi',
+                reason: 'Buka materi: ' + m.id, reference_id: m.id,
+              }))
+              supabase.from('points_log').insert(ptRows).then(() => {
+                const extra = {}
+                opened.forEach(m => { extra[m.id] = { points_awarded: true } })
+                setViews(prev => ({ ...prev, ...extra }))
+              })
             })
-          })
         })
       }
     })

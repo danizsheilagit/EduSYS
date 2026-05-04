@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { ClipboardList, Plus, Edit2, Trash2, X, Loader2, ChevronDown, Clock, Users, Star, Eye, CheckCircle2, FileText, ChevronLeft, ChevronRight, Search } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
+import { withRetry } from '@/lib/withRetry'
 import toast from 'react-hot-toast'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 
@@ -23,8 +24,11 @@ function GradingPanel({ assignment, onClose }) {
 
   async function fetchData() {
     setLoading(true)
-    const { data: subs }  = await supabase.from('submissions').select('*').eq('assignment_id', assignment.id)
-    const { data: enr }   = await supabase.from('enrollments').select('student_id').eq('course_id', assignment.course_id)
+    // Parallel: fetch submissions + enrollments sekaligus
+    const [{ data: subs }, { data: enr }] = await Promise.all([
+      supabase.from('submissions').select('*').eq('assignment_id', assignment.id),
+      supabase.from('enrollments').select('student_id').eq('course_id', assignment.course_id),
+    ])
     const subIds = subs?.map(s => s.student_id) || []
     const enrIds = enr?.map(e => e.student_id)  || []
     const allIds = [...new Set([...subIds, ...enrIds])]
@@ -52,8 +56,12 @@ function GradingPanel({ assignment, onClose }) {
     const grade = Number(g.grade)
     if (isNaN(grade) || grade < 0 || grade > assignment.max_score) { toast.error(`Nilai 0–${assignment.max_score}`); return }
     setGrading(p => ({ ...p, [selected]: { ...p[selected], saving: true } }))
-    const { error } = await supabase.from('submissions').update({ grade, feedback: g.feedback, status: 'graded' }).eq('id', sub.id)
-    if (error) toast.error('Gagal menyimpan')
+    const { error } = await withRetry(
+      () => supabase.from('submissions').update({ grade, feedback: g.feedback, status: 'graded' }).eq('id', sub.id),
+      { retries: 3, onRetry: ({ attempt }) => toast.loading(`Mencoba lagi... (${attempt}/3)`, { id: 'retry-grade' }) }
+    )
+    toast.dismiss('retry-grade')
+    if (error) toast.error('Gagal menyimpan nilai — coba lagi')
     else { toast.success(`Nilai ${grade} tersimpan`); fetchData() }
     setGrading(p => ({ ...p, [selected]: { ...p[selected], saving: false } }))
   }
