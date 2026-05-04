@@ -43,8 +43,9 @@ export default function Header() {
   const [notifOpen, setNotifOpen] = useState(false)
   const [notifs,    setNotifs]    = useState([])
   const [notifLoading, setNotifLoading] = useState(false)
-  const dropRef  = useRef(null)
-  const notifRef = useRef(null)
+  const dropRef     = useRef(null)
+  const notifRef    = useRef(null)
+  const lastFetchRef = useRef(0)  // timestamp terakhir fetch notif
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -56,106 +57,99 @@ export default function Header() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  // Fetch notifications
-  const fetchNotifs = useCallback(async () => {
+  // Fetch notifications — dengan cache 60 detik
+  const fetchNotifs = useCallback(async (force = false) => {
     if (!user || !profile) return
+    const now = Date.now()
+    // Skip jika data masih segar (< 60 detik) dan tidak dipaksa
+    if (!force && now - lastFetchRef.current < 60_000) return
     setNotifLoading(true)
+    lastFetchRef.current = now
 
+    const role  = profile.role
     const items = []
-    const role = profile.role
 
-    // 1. Recent active announcements (semua role)
-    const { data: ann } = await supabase
-      .from('announcements')
-      .select('id, title, type, created_at')
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(5)
+    try {
+      // Parallel: jalankan semua query sekaligus
+      const since7d  = new Date(now - 7  * 86400_000).toISOString()
+      const since3d  = new Date(now - 3  * 86400_000).toISOString()
 
-    ;(ann || []).forEach(a => items.push({
-      id:   `ann-${a.id}`,
-      type: 'announcement',
-      text: a.title,
-      sub:  a.type === 'global' ? 'Pengumuman Global' : 'Pengumuman',
-      time: a.created_at,
-    }))
-
-    // 2. Mahasiswa: tugas baru dinilai (score baru-baru ini)
-    if (role === 'mahasiswa') {
-      const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-      const { data: graded } = await supabase
-        .from('submissions')
-        .select('id, score, updated_at, assignment:assignments(title)')
-        .eq('student_id', user.id)
-        .not('score', 'is', null)
-        .gte('updated_at', since)
-        .order('updated_at', { ascending: false })
-        .limit(5)
-
-      ;(graded || []).forEach(s => items.push({
-        id:   `grade-${s.id}`,
-        type: 'grade',
-        text: `Nilai masuk: ${s.assignment?.title || 'Tugas'}`,
-        sub:  `Nilai: ${s.score}`,
-        time: s.updated_at,
-      }))
-
-      // Tugas baru (assignment baru dari enrollment)
-      let newAsgn = []
-      try {
-        const { data } = await supabase
-          .from('assignments')
-          .select('id, title, due_date, created_at, course:courses!inner(id, code)')
-          .gte('created_at', new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())
+      const [annRes, gradedRes, asgnRes, pendingRes] = await Promise.all([
+        // 1. Pengumuman aktif (semua role)
+        supabase.from('announcements')
+          .select('id, title, type, created_at')
+          .eq('is_active', true)
           .order('created_at', { ascending: false })
-          .limit(3)
-        newAsgn = data || []
-      } catch (_) { /* ignore */ }
+          .limit(5),
 
-      ;(newAsgn || []).forEach(a => items.push({
-        id:   `asgn-${a.id}`,
-        type: 'assignment',
-        text: `Tugas baru: ${a.title}`,
-        sub:  a.due_date ? `Deadline ${new Date(a.due_date).toLocaleDateString('id-ID',{day:'numeric',month:'short'})}` : 'Segera kerjakan',
+        // 2. Mahasiswa: tugas yang baru dinilai
+        role === 'mahasiswa'
+          ? supabase.from('submissions')
+              .select('id, score, updated_at, assignment:assignments(title)')
+              .eq('student_id', user.id)
+              .not('score', 'is', null)
+              .gte('updated_at', since7d)
+              .order('updated_at', { ascending: false })
+              .limit(5)
+          : Promise.resolve({ data: null }),
+
+        // 3. Mahasiswa: tugas baru 3 hari terakhir
+        role === 'mahasiswa'
+          ? supabase.from('assignments')
+              .select('id, title, due_date, created_at')
+              .gte('created_at', since3d)
+              .order('created_at', { ascending: false })
+              .limit(3)
+          : Promise.resolve({ data: null }),
+
+        // 4. Dosen: submission belum dinilai
+        role === 'dosen'
+          ? supabase.from('submissions')
+              .select('id, submitted_at, student:profiles(full_name), assignment:assignments!inner(title, course:courses!inner(dosen_id))')
+              .eq('assignment.course.dosen_id', user.id)
+              .is('score', null)
+              .order('submitted_at', { ascending: false })
+              .limit(5)
+          : Promise.resolve({ data: null }),
+      ])
+
+      ;(annRes.data    || []).forEach(a => items.push({
+        id: `ann-${a.id}`,   type: 'announcement',
+        text: a.title,       sub: a.type === 'global' ? 'Pengumuman Global' : 'Pengumuman',
         time: a.created_at,
       }))
-    }
-
-    // 3. Dosen: submission baru belum dinilai
-    if (role === 'dosen') {
-      let pending = []
-      try {
-        const { data } = await supabase
-          .from('submissions')
-          .select('id, submitted_at, student:profiles(full_name), assignment:assignments!inner(title, course:courses!inner(dosen_id))')
-          .eq('assignment.course.dosen_id', user.id)
-          .is('score', null)
-          .order('submitted_at', { ascending: false })
-          .limit(5)
-        pending = data || []
-      } catch (_) { /* ignore */ }
-
-      ;(pending || []).forEach(s => items.push({
-        id:   `sub-${s.id}`,
-        type: 'assignment',
+      ;(gradedRes.data || []).forEach(s => items.push({
+        id: `grade-${s.id}`, type: 'grade',
+        text: `Nilai masuk: ${s.assignment?.title || 'Tugas'}`,
+        sub: `Nilai: ${s.score}`,          time: s.updated_at,
+      }))
+      ;(asgnRes.data   || []).forEach(a => items.push({
+        id: `asgn-${a.id}`,  type: 'assignment',
+        text: `Tugas baru: ${a.title}`,
+        sub: a.due_date ? `Deadline ${new Date(a.due_date).toLocaleDateString('id-ID',{day:'numeric',month:'short'})}` : 'Segera kerjakan',
+        time: a.created_at,
+      }))
+      ;(pendingRes.data || []).forEach(s => items.push({
+        id: `sub-${s.id}`,   type: 'assignment',
         text: `Pengumpulan baru: ${s.assignment?.title || 'Tugas'}`,
-        sub:  `Dari ${s.student?.full_name || 'Mahasiswa'} · belum dinilai`,
+        sub: `Dari ${s.student?.full_name || 'Mahasiswa'} · belum dinilai`,
         time: s.submitted_at,
       }))
-    }
+    } catch (_) { /* ignore errors — notif is best-effort */ }
 
-    // Sort by time descending, max 8
     items.sort((a, b) => new Date(b.time) - new Date(a.time))
     setNotifs(items.slice(0, 8))
     setNotifLoading(false)
   }, [user, profile])
 
-  // Load notif saat pertama dan saat panel dibuka
+  // Load saat pertama kali user tersedia
   useEffect(() => { if (user && profile) fetchNotifs() }, [fetchNotifs])
 
   function handleOpenNotif() {
-    setNotifOpen(v => !v)
-    if (!notifOpen) fetchNotifs()
+    const next = !notifOpen
+    setNotifOpen(next)
+    // Re-fetch hanya saat buka panel DAN data sudah > 60 detik
+    if (next) fetchNotifs()
   }
 
   const initials = profile?.full_name

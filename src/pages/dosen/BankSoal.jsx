@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Database, Plus, Edit2, Trash2, X, Loader2, ChevronDown, Search, Upload, FileDown, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { Database, Plus, Edit2, Trash2, X, Loader2, ChevronDown, Search, Upload, FileDown, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
+import { withRetry } from '@/lib/withRetry'
 import toast from 'react-hot-toast'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 
@@ -50,10 +51,13 @@ export default function BankSoal() {
   const [expandedIds,   setExpandedIds]   = useState(new Set())
   const [collapsedTopics, setCollapsedTopics] = useState(new Set())
   const [editingTopic,  setEditingTopic]  = useState(null)   // { old, draft }
+  const [page,          setPage]          = useState(0)       // halaman saat ini (0-indexed)
+  const [totalCount,    setTotalCount]    = useState(0)       // total soal di DB
+  const PAGE_SIZE = 50
   const fileRef = useRef(null)
 
   useEffect(() => { if (user) fetchCourses() }, [user])
-  useEffect(() => { if (courseId) fetchQuestions() }, [courseId])
+  useEffect(() => { if (courseId) { setPage(0); fetchQuestions(0) } }, [courseId])
 
   async function fetchCourses() {
     const { data } = await supabase.from('courses').select('id,code,name').eq('dosen_id', user.id).order('name')
@@ -63,10 +67,18 @@ export default function BankSoal() {
     setCourseId(match ? paramId : (data?.[0]?.id || ''))
   }
 
-  async function fetchQuestions() {
+  async function fetchQuestions(pageNum = page) {
     setLoading(true)
-    const { data } = await supabase.from('questions').select('*').eq('course_id', courseId).order('created_at', { ascending: false })
+    const from = pageNum * PAGE_SIZE
+    const to   = from + PAGE_SIZE - 1
+    const { data, count } = await supabase
+      .from('questions')
+      .select('*', { count: 'exact' })
+      .eq('course_id', courseId)
+      .order('created_at', { ascending: false })
+      .range(from, to)
     setQuestions(data || [])
+    setTotalCount(count || 0)
     setLoading(false)
   }
 
@@ -98,11 +110,13 @@ export default function BankSoal() {
       correct_answer: form.correct_answer,
       explanation: form.explanation.trim() || null,
     }
-    const { error } = editing
-      ? await supabase.from('questions').update(payload).eq('id', editing)
-      : await supabase.from('questions').insert(payload)
+    const { error } = await withRetry(() =>
+      editing
+        ? supabase.from('questions').update(payload).eq('id', editing)
+        : supabase.from('questions').insert(payload)
+    )
     if (error) toast.error('Gagal menyimpan: ' + error.message)
-    else { toast.success(editing ? 'Soal diperbarui' : 'Soal ditambahkan'); setModal(false); fetchQuestions() }
+    else { toast.success(editing ? 'Soal diperbarui' : 'Soal ditambahkan'); setModal(false); fetchQuestions(page) }
     setSaving(false)
   }
 
@@ -192,7 +206,7 @@ export default function BankSoal() {
     const payload = importRows.map(r => ({ ...r, course_id: courseId, created_by: user.id }))
     const { error } = await supabase.from('questions').insert(payload)
     if (error) toast.error('Gagal import: ' + error.message)
-    else { toast.success(`${importRows.length} soal berhasil diimport!`); setImportModal(false); fetchQuestions() }
+    else { toast.success(`${importRows.length} soal berhasil diimport!`); setImportModal(false); fetchQuestions(0); setPage(0) }
     setImporting(false)
   }
 
@@ -207,7 +221,7 @@ export default function BankSoal() {
     await supabase.from('questions').delete().eq('id', id)
     toast('Soal dihapus', { icon: '🗑️' })
     setSelectedIds(prev => { const s = new Set(prev); s.delete(id); return s })
-    fetchQuestions()
+    fetchQuestions(page)
   }
 
   function toggleSelect(id) {
@@ -269,7 +283,7 @@ export default function BankSoal() {
     if (error) { toast.error('Gagal mengganti nama topik'); return }
     toast.success(`Topik diubah: "${oldName}" → "${trimmed}"`)
     setEditingTopic(null)
-    fetchQuestions()
+    fetchQuestions(page)
   }
 
   const filtered = questions.filter(q => {
@@ -280,10 +294,19 @@ export default function BankSoal() {
   })
 
   const counts = {
-    all: questions.length,
+    all:    totalCount,
     mudah:  questions.filter(q => q.difficulty === 'mudah').length,
     sedang: questions.filter(q => q.difficulty === 'sedang').length,
     sulit:  questions.filter(q => q.difficulty === 'sulit').length,
+  }
+
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE)
+
+  function goToPage(p) {
+    const nextPage = Math.max(0, Math.min(p, totalPages - 1))
+    setPage(nextPage)
+    fetchQuestions(nextPage)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   return (
@@ -491,6 +514,33 @@ export default function BankSoal() {
           </div>
          )
        })()}
+
+      {/* ── Pagination bar ─────────────────────────────────────── */}
+      {totalPages > 1 && (
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'14px 0', marginTop:8 }}>
+          <span style={{ fontSize:12, color:'var(--gray-500)' }}>
+            Halaman {page + 1} dari {totalPages} · {totalCount} soal total
+          </span>
+          <div style={{ display:'flex', gap:6 }}>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => goToPage(page - 1)}
+              disabled={page === 0}
+              style={{ display:'flex', alignItems:'center', gap:4 }}
+            >
+              <ChevronLeft size={13}/> Sebelumnya
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => goToPage(page + 1)}
+              disabled={page >= totalPages - 1}
+              style={{ display:'flex', alignItems:'center', gap:4 }}
+            >
+              Berikutnya <ChevronRight size={13}/>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Add/Edit Modal */}
       {modal && (

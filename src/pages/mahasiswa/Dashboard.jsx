@@ -7,6 +7,7 @@ import {
 import { useAuth }   from '@/contexts/AuthContext'
 import { useAI }     from '@/contexts/AIContext'
 import { supabase }  from '@/lib/supabase'
+import { queryCache } from '@/lib/queryCache'
 import AISettingsModal from '@/components/ai/AISettingsModal'
 import AnnouncementCarousel from '@/components/AnnouncementCarousel'
 import Sk from '@/components/ui/Skeleton'
@@ -65,22 +66,31 @@ export default function MahasiswaDashboard() {
   }
 
   async function fetchLeaderboard() {
-    const { data } = await supabase
-      .from('leaderboard')
-      .select('user_id,full_name,nim,avatar_url,total_points,rank')
-      .order('rank', { ascending: true })
-      .limit(5)
+    const data = await queryCache.get(
+      'leaderboard_top5',
+      () => supabase
+        .from('leaderboard')
+        .select('user_id,full_name,nim,avatar_url,total_points,rank')
+        .order('rank', { ascending: true })
+        .limit(5),
+      2 * 60 * 1000  // cache 2 menit
+    )
     setLeaderboard(data || [])
   }
 
   async function fetchBadges() {
-    const [{ data: allB }, { data: myB }] = await Promise.all([
-      supabase.from('badges').select('*').limit(12),
-      supabase.from('user_badges').select('badge_id').eq('user_id', user.id),
+    const [allB, myB] = await Promise.all([
+      queryCache.get(
+        'all_badges',
+        () => supabase.from('badges').select('*').limit(12),
+        10 * 60 * 1000  // cache 10 menit — badges jarang berubah
+      ),
+      supabase.from('user_badges').select('badge_id').eq('user_id', user.id)
+        .then(r => r.data),
     ])
     setAllBadges(allB || [])
     const earned = new Set((myB || []).map(b => b.badge_id))
-    setMyBadges(allB?.filter(b => earned.has(b.id)) || [])
+    setMyBadges((allB || []).filter(b => earned.has(b.id)))
   }
 
   async function fetchStats() {
