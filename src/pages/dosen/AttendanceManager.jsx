@@ -3,11 +3,12 @@ import { useSearchParams } from 'react-router-dom'
 import {
   QrCode, Plus, Users, Clock, CheckCircle2, X, Loader2,
   RefreshCw, Edit2, Save, BookOpen, ChevronDown, ChevronUp,
-  BarChart2, ClipboardEdit
+  BarChart2, ClipboardEdit, Printer
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth }  from '@/contexts/AuthContext'
 import { withRetry } from '@/lib/withRetry'
+import { printPresensi } from '@/utils/printPresensi'
 import toast from 'react-hot-toast'
 import AttendanceManual    from './AttendanceManual'
 import AttendanceAnalytics from './AttendanceAnalytics'
@@ -39,9 +40,10 @@ export default function AttendanceManager() {
   const [expanded,    setExpanded]    = useState(null)
   const [form,        setForm]        = useState({ title: '', meeting_number: 1, duration: 30 })
   // ── Edit sesi state ─────────────────────────────────────────
-  const [editSession, setEditSession] = useState(null)   // session object yg diedit
+  const [editSession, setEditSession] = useState(null)
   const [editForm,    setEditForm]    = useState({ title:'', meeting_number:1, extend_minutes:0 })
   const [editSaving,  setEditSaving]  = useState(false)
+  const [printing,    setPrinting]    = useState(false)
 
   // Load courses taught by dosen
   useEffect(() => {
@@ -121,12 +123,11 @@ export default function AttendanceManager() {
       title:          editForm.title.trim(),
       meeting_number: editForm.meeting_number,
     }
-    // Perpanjang / buka kembali sesi
     if (editForm.extend_minutes > 0) {
       const wasExpired = isExpired(editSession)
       const base = wasExpired ? new Date() : new Date(editSession.expires_at)
       updates.expires_at = new Date(base.getTime() + editForm.extend_minutes * 60_000).toISOString()
-      if (wasExpired) updates.is_active = true   // buka kembali sesi yang sudah ditutup
+      if (wasExpired) updates.is_active = true
     }
     const { error } = await withRetry(() =>
       supabase.from('attendance_sessions').update(updates).eq('id', editSession.id)
@@ -134,6 +135,18 @@ export default function AttendanceManager() {
     setEditSaving(false)
     if (error) toast.error('Gagal menyimpan perubahan')
     else { toast.success('Sesi berhasil diperbarui!'); setEditSession(null); fetchSessions() }
+  }
+
+  async function handlePrint() {
+    if (!courseId) return
+    setPrinting(true)
+    try {
+      await printPresensi({ supabase, courseId, userId: user.id })
+    } catch (err) {
+      toast.error('Gagal membuat cetak: ' + err.message)
+    } finally {
+      setPrinting(false)
+    }
   }
 
   async function updateStatus(sessionId, studentId, status) {
@@ -196,6 +209,13 @@ export default function AttendanceManager() {
               <Plus size={14}/> Buat Sesi
             </button>
           )}
+          <button className="btn btn-secondary" onClick={handlePrint} disabled={printing || !sessions.length}
+            style={{ display:'flex', alignItems:'center', gap:6, whiteSpace:'nowrap' }} title="Cetak jurnal kehadiran">
+            {printing
+              ? <Loader2 size={14} style={{ animation:'spin .7s linear infinite' }}/>
+              : <Printer size={14}/>}
+            Cetak Jurnal
+          </button>
         </div>
       </div>
 
