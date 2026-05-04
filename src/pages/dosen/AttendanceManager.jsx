@@ -33,11 +33,15 @@ export default function AttendanceManager() {
   const [courseId, setCourseId] = useState('')
   const [sessions, setSessions] = useState([])
   const [students, setStudents] = useState([])
-  const [showForm, setShowForm] = useState(false)
-  const [loading,  setLoading]  = useState(false)
-  const [saving,   setSaving]   = useState(false)
-  const [expanded, setExpanded] = useState(null)
-  const [form, setForm] = useState({ title: '', meeting_number: 1, duration: 30 })
+  const [showForm,    setShowForm]    = useState(false)
+  const [loading,     setLoading]     = useState(false)
+  const [saving,      setSaving]      = useState(false)
+  const [expanded,    setExpanded]    = useState(null)
+  const [form,        setForm]        = useState({ title: '', meeting_number: 1, duration: 30 })
+  // ── Edit sesi state ─────────────────────────────────────────
+  const [editSession, setEditSession] = useState(null)   // session object yg diedit
+  const [editForm,    setEditForm]    = useState({ title:'', meeting_number:1, extend_minutes:0 })
+  const [editSaving,  setEditSaving]  = useState(false)
 
   // Load courses taught by dosen
   useEffect(() => {
@@ -103,6 +107,33 @@ export default function AttendanceManager() {
     )
     if (error) toast.error('Gagal menutup sesi')
     else { toast.success('Sesi ditutup'); fetchSessions() }
+  }
+
+  function openEditSession(s) {
+    setEditSession(s)
+    setEditForm({ title: s.title, meeting_number: s.meeting_number, extend_minutes: 0 })
+  }
+
+  async function saveEditSession() {
+    if (!editForm.title.trim()) { toast.error('Judul tidak boleh kosong'); return }
+    setEditSaving(true)
+    const updates = {
+      title:          editForm.title.trim(),
+      meeting_number: editForm.meeting_number,
+    }
+    // Perpanjang / buka kembali sesi
+    if (editForm.extend_minutes > 0) {
+      const wasExpired = isExpired(editSession)
+      const base = wasExpired ? new Date() : new Date(editSession.expires_at)
+      updates.expires_at = new Date(base.getTime() + editForm.extend_minutes * 60_000).toISOString()
+      if (wasExpired) updates.is_active = true   // buka kembali sesi yang sudah ditutup
+    }
+    const { error } = await withRetry(() =>
+      supabase.from('attendance_sessions').update(updates).eq('id', editSession.id)
+    )
+    setEditSaving(false)
+    if (error) toast.error('Gagal menyimpan perubahan')
+    else { toast.success('Sesi berhasil diperbarui!'); setEditSession(null); fetchSessions() }
   }
 
   async function updateStatus(sessionId, studentId, status) {
@@ -249,6 +280,10 @@ export default function AttendanceManager() {
                     </div>
                     <div style={{ display:'flex', gap:8, alignItems:'center' }}>
                       {!expired && (<button className="btn btn-ghost btn-sm" onClick={() => closeSession(s.id)} style={{ color:'#dc2626' }}><X size={13}/> Tutup</button>)}
+                      <button className="btn btn-ghost btn-sm" onClick={() => openEditSession(s)} title="Edit sesi"
+                        style={{ display:'flex', alignItems:'center', gap:4 }}>
+                        <Edit2 size={13}/>
+                      </button>
                       <button className="btn btn-secondary btn-sm" onClick={() => toggleExpand(s.id)} style={{ display:'flex', alignItems:'center', gap:4 }}>
                         <Users size={13}/>{isOpen ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}
                       </button>
@@ -317,6 +352,76 @@ export default function AttendanceManager() {
 
       {tab === 'manual'   && <AttendanceManual    courseId={courseId} students={students} />}
       {tab === 'analitik' && <AttendanceAnalytics courseId={courseId} students={students} />}
+
+      {/* ── Edit Sesi Modal ──────────────────────────────────── */}
+      {editSession && (
+        <div style={{ position:'fixed', inset:0, zIndex:1000, background:'rgba(0,0,0,.45)', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div style={{ background:'var(--surface)', borderRadius:14, width:'100%', maxWidth:460, boxShadow:'0 20px 60px rgba(0,0,0,.25)' }}>
+            <div style={{ padding:'20px 24px', borderBottom:'1px solid var(--border-color)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <Edit2 size={16} color="var(--indigo-600)"/>
+                <h2 style={{ fontWeight:700, fontSize:16, margin:0 }}>Edit Sesi Absensi</h2>
+              </div>
+              <button onClick={() => setEditSession(null)} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--gray-400)' }}><X size={18}/></button>
+            </div>
+            <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:14 }}>
+
+              {/* Info sesi sumber */}
+              <div style={{ background:'var(--gray-50)', borderRadius:8, padding:'8px 12px', fontSize:12, color:'var(--gray-500)', border:'1px solid var(--gray-200)' }}>
+                Sesi dibuat: {new Date(editSession.created_at).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'})}
+                {' · Kode: '}<strong style={{ fontFamily:'monospace', color:'var(--indigo-600)' }}>{editSession.code}</strong>
+              </div>
+
+              <div>
+                <label className="label">Judul Pertemuan</label>
+                <input className="input" value={editForm.title}
+                  onChange={e => setEditForm(f => ({...f, title: e.target.value}))}/>
+              </div>
+              <div>
+                <label className="label">No. Pertemuan</label>
+                <input className="input" type="number" min={1} max={99}
+                  value={editForm.meeting_number}
+                  onChange={e => setEditForm(f => ({...f, meeting_number: +e.target.value}))}/>
+              </div>
+
+              {/* Perpanjang / buka kembali */}
+              <div>
+                <label className="label">
+                  {isExpired(editSession) ? 'Buka kembali selama' : 'Perpanjang durasi'}
+                </label>
+                <select className="input" value={editForm.extend_minutes}
+                  onChange={e => setEditForm(f => ({...f, extend_minutes: +e.target.value}))}>
+                  <option value={0}>
+                    {isExpired(editSession) ? '— Tidak dibuka kembali' : '— Tidak diperpanjang'}
+                  </option>
+                  {[5,10,15,20,30,45,60].map(m => (
+                    <option key={m} value={m}>+{m} menit{isExpired(editSession) ? ' (buka kembali)' : ''}</option>
+                  ))}
+                </select>
+                {!isExpired(editSession) && editForm.extend_minutes > 0 && (
+                  <div style={{ fontSize:11, color:'var(--indigo-600)', marginTop:4 }}>
+                    ⏰ Sesi akan berakhir pada {new Date(new Date(editSession.expires_at).getTime() + editForm.extend_minutes * 60_000).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}
+                  </div>
+                )}
+                {isExpired(editSession) && editForm.extend_minutes > 0 && (
+                  <div style={{ fontSize:11, color:'#16a34a', marginTop:4 }}>
+                    ✅ Sesi akan dibuka kembali selama {editForm.extend_minutes} menit
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={{ padding:'16px 24px', borderTop:'1px solid var(--border-color)', display:'flex', gap:8, justifyContent:'flex-end' }}>
+              <button className="btn btn-ghost" onClick={() => setEditSession(null)}>Batal</button>
+              <button className="btn btn-primary" onClick={saveEditSession} disabled={editSaving}
+                style={{ display:'flex', alignItems:'center', gap:6 }}>
+                {editSaving && <Loader2 size={14} style={{ animation:'spin .7s linear infinite' }}/>}
+                <Save size={13}/> Simpan Perubahan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @keyframes pulse {
