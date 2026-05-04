@@ -294,7 +294,7 @@ export default function DosenUjianManager() {
 
       {modal && (
         <div className="modal-overlay">
-          <div className="modal">
+        <div className="modal" style={{ maxWidth:600, width:'95vw', maxHeight:'90vh', display:'flex', flexDirection:'column' }}>
             <div className="modal-header">
               <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                 <FileQuestion size={16} color="var(--indigo-600)"/>
@@ -302,7 +302,7 @@ export default function DosenUjianManager() {
               </div>
               <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setModal(false)}><X size={14}/></button>
             </div>
-            <div className="modal-body">
+            <div className="modal-body" style={{ overflowY:'auto', flex:1 }}>
               <div className="form-grid form-grid-2">
                 <div className="input-group" style={{ gridColumn:'span 2' }}>
                   <label className="input-label">Judul Ujian *</label>
