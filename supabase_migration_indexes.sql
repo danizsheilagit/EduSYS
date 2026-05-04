@@ -81,12 +81,15 @@ CREATE INDEX IF NOT EXISTS idx_attendances_session_id
 CREATE INDEX IF NOT EXISTS idx_attendances_student_id
   ON public.attendances (student_id);
 
--- ── Exam Attempts ────────────────────────────────────────────
-CREATE INDEX IF NOT EXISTS idx_exam_attempts_student_id
-  ON public.exam_attempts (student_id);
+-- ── Exam Answers ────────────────────────────────────────────
+CREATE INDEX IF NOT EXISTS idx_exam_answers_student_id
+  ON public.exam_answers (student_id);
 
-CREATE INDEX IF NOT EXISTS idx_exam_attempts_exam_id
-  ON public.exam_attempts (exam_id);
+CREATE INDEX IF NOT EXISTS idx_exam_answers_exam_id
+  ON public.exam_answers (exam_id);
+
+CREATE INDEX IF NOT EXISTS idx_exam_answers_exam_student
+  ON public.exam_answers (exam_id, student_id);
 
 -- Verifikasi: tampilkan semua index yang baru dibuat
 SELECT tablename, indexname
