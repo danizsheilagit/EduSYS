@@ -300,7 +300,7 @@ function AttachItem({ attach, matId, idx, userId, isCompleted, onMarkDone, onUpd
               <div style={{ position:'relative', width:'100%', aspectRatio: attach.mime==='video/youtube' ? '16/9' : '4/3', background:'#111' }}>
                 <iframe src={embed} title={attach.label || t.label}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-                  allowFullScreen style={{ width:'100%', height:'100%', border:'none', display:'block' }}/>
+                  style={{ width:'100%', height:'100%', border:'none', display:'block' }}/>
               </div>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 14px', background:'#f9fafb', borderTop:'1px solid var(--gray-100)' }}>
                 <a href={attach.url} target="_blank" rel="noopener noreferrer"
