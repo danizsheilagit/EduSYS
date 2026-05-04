@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Users, Search, Edit2, Loader2, X, Shield, CheckSquare, Square, ChevronDown, UserCheck } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Users, Search, Edit2, Loader2, X, Shield, CheckSquare, Square, ChevronDown, UserCheck, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import toast from 'react-hot-toast'
@@ -20,14 +20,47 @@ export default function AdminUsers() {
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [bulkRole,    setBulkRole]    = useState('mahasiswa')
   const [bulkSaving,  setBulkSaving]  = useState(false)
+  const [page,        setPage]        = useState(0)
+  const [totalCount,  setTotalCount]  = useState(0)
+  const [roleCounts,  setRoleCounts]  = useState({})
+  const PAGE_SIZE = 25
+  const searchTimer = useRef(null)
   const { confirmDialog, showConfirm } = useConfirm()
 
-  useEffect(() => { fetchUsers(); fetchProdi() }, [])
+  useEffect(() => { fetchUsers(0, '', ''); fetchProdi(); fetchRoleCounts() }, [])
 
-  async function fetchUsers() {
-    const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false })
+  async function fetchUsers(pageNum = page, q = search, role = filterRole) {
+    setLoading(true)
+    const from = pageNum * PAGE_SIZE
+    const to   = from + PAGE_SIZE - 1
+
+    let query = supabase.from('profiles').select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(from, to)
+
+    // Server-side role filter
+    if (role) query = query.eq('role', role)
+
+    // Server-side search (multi-column OR)
+    if (q.trim()) {
+      const s = q.trim()
+      query = query.or(`full_name.ilike.%${s}%,email.ilike.%${s}%,nim.ilike.%${s}%,nidn.ilike.%${s}%`)
+    }
+
+    const { data, count } = await query
     setUsers(data || [])
+    setTotalCount(count || 0)
     setLoading(false)
+  }
+
+  async function fetchRoleCounts() {
+    const counts = {}
+    await Promise.all(ROLES.map(async r => {
+      const { count } = await supabase.from('profiles')
+        .select('*', { count: 'exact', head: true }).eq('role', r)
+      counts[r] = count || 0
+    }))
+    setRoleCounts(counts)
   }
 
   async function fetchProdi() {
@@ -49,7 +82,9 @@ export default function AdminUsers() {
       toast.error(`Gagal menyimpan: ${error.message}`)
     } else {
       toast.success('Profil berhasil diperbarui')
-      fetchUsers(); setEditing(null)
+      fetchUsers(page, search, filterRole)
+      fetchRoleCounts()
+      setEditing(null)
     }
     setSaving(false)
   }
@@ -79,7 +114,8 @@ export default function AdminUsers() {
       setSelectedIds(new Set())
     }
     setBulkSaving(false)
-    fetchUsers()
+    fetchUsers(page, search, filterRole)
+    fetchRoleCounts()
   }
 
   // ── Selection helpers ────────────────────────────────────────────
@@ -92,27 +128,40 @@ export default function AdminUsers() {
   }
 
   function toggleSelectAll() {
-    if (selectedIds.size === filtered.length) {
+    if (selectedIds.size === users.length) {
       setSelectedIds(new Set())
     } else {
-      setSelectedIds(new Set(filtered.map(u => u.id)))
+      setSelectedIds(new Set(users.map(u => u.id)))
     }
   }
 
-  const filtered = users.filter(u => {
-    const matchSearch = !search ||
-      u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
-      u.email?.toLowerCase().includes(search.toLowerCase()) ||
-      u.nim?.includes(search) || u.nidn?.includes(search)
-    const matchRole = !filterRole || u.role === filterRole
-    return matchSearch && matchRole
-  })
+  // Helpers: search debounce + role filter
+  function handleSearchChange(val) {
+    setSearch(val)
+    clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => {
+      setPage(0)
+      fetchUsers(0, val, filterRole)
+    }, 300)
+  }
 
-  const allSelected = filtered.length > 0 && selectedIds.size === filtered.length
-  const someSelected = selectedIds.size > 0 && selectedIds.size < filtered.length
+  function handleRoleFilter(role) {
+    setFilterRole(role)
+    setPage(0)
+    setSelectedIds(new Set())
+    fetchUsers(0, search, role)
+  }
 
-  // Role count badges for filter bar
-  const roleCounts = ROLES.reduce((acc, r) => ({ ...acc, [r]: users.filter(u => u.role === r).length }), {})
+  function goToPage(p) {
+    const next = Math.max(0, Math.min(p, Math.ceil(totalCount / PAGE_SIZE) - 1))
+    setPage(next)
+    fetchUsers(next, search, filterRole)
+    setSelectedIds(new Set())
+  }
+
+  const allSelected  = users.length > 0 && selectedIds.size === users.length
+  const someSelected = selectedIds.size > 0 && selectedIds.size < users.length
+  const totalPages   = Math.ceil(totalCount / PAGE_SIZE)
 
   return (
     <>
@@ -121,7 +170,7 @@ export default function AdminUsers() {
       <div className="page-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
         <div>
           <h1 className="page-title">Manajemen Pengguna</h1>
-          <p className="page-subtitle">{users.length} pengguna terdaftar</p>
+          <p className="page-subtitle">{totalCount} pengguna terdaftar</p>
         </div>
       </div>
 
@@ -192,13 +241,14 @@ export default function AdminUsers() {
         <div style={{ padding:'14px 16px', borderBottom:'1px solid var(--gray-100)', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
           <div style={{ position:'relative', flex:1, minWidth:200 }}>
             <Search size={13} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--gray-400)' }}/>
-            <input className="input" style={{ paddingLeft:32 }} placeholder="Cari nama, email, NIM, NIDN…" value={search} onChange={e => setSearch(e.target.value)}/>
+            <input className="input" style={{ paddingLeft:32 }} placeholder="Cari nama, email, NIM, NIDN…"
+              value={search} onChange={e => handleSearchChange(e.target.value)}/>
           </div>
 
           {/* Filter chip by role */}
           <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
             <button
-              onClick={() => setFilterRole('')}
+              onClick={() => handleRoleFilter('')}
               style={{
                 padding:'5px 12px', borderRadius:99, fontSize:12, fontWeight:600, cursor:'pointer',
                 background: !filterRole ? 'var(--indigo-600)' : 'var(--gray-100)',
@@ -206,12 +256,12 @@ export default function AdminUsers() {
                 border:'none', transition:'all .12s',
               }}
             >
-              Semua ({users.length})
+              Semua ({totalCount})
             </button>
             {ROLES.map(r => (
               <button
                 key={r}
-                onClick={() => setFilterRole(prev => prev === r ? '' : r)}
+                onClick={() => handleRoleFilter(r === filterRole ? '' : r)}
                 style={{
                   padding:'5px 12px', borderRadius:99, fontSize:12, fontWeight:600, cursor:'pointer',
                   background: filterRole === r ? 'var(--indigo-600)' : 'var(--gray-100)',
@@ -219,7 +269,7 @@ export default function AdminUsers() {
                   border:'none', transition:'all .12s',
                 }}
               >
-                {ROLE_LABELS[r]} ({roleCounts[r] || 0})
+                {ROLE_LABELS[r]} ({roleCounts[r] ?? '…'})
               </button>
             ))}
           </div>
@@ -227,7 +277,7 @@ export default function AdminUsers() {
 
         {loading ? (
           <div style={{ padding:32, display:'flex', justifyContent:'center' }}><div className="spinner"/></div>
-        ) : filtered.length === 0 ? (
+        ) : users.length === 0 ? (
           <div className="empty-state" style={{ padding:40 }}>
             <Users size={32} color="var(--gray-300)"/>
             <p className="empty-state-text">Tidak ada pengguna ditemukan</p>
@@ -257,13 +307,13 @@ export default function AdminUsers() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((u, i) => {
+              {users.map((u, i) => {
                 const isSelected = selectedIds.has(u.id)
                 return (
                   <tr
                     key={u.id}
                     style={{
-                      borderBottom: i < filtered.length-1 ? '1px solid var(--gray-100)' : 'none',
+                      borderBottom: i < users.length-1 ? '1px solid var(--gray-100)' : 'none',
                       background: isSelected ? '#eef2ff' : 'transparent',
                       transition: 'background .1s',
                     }}
@@ -308,11 +358,24 @@ export default function AdminUsers() {
           </table>
         )}
 
-        {/* Footer count */}
-        {!loading && filtered.length > 0 && (
-          <div style={{ padding:'10px 16px', borderTop:'1px solid var(--gray-100)', fontSize:12, color:'var(--gray-400)', display:'flex', justifyContent:'space-between' }}>
-            <span>Menampilkan {filtered.length} dari {users.length} pengguna</span>
-            {selectedIds.size > 0 && <span style={{ color:'var(--indigo-600)', fontWeight:600 }}>{selectedIds.size} dipilih</span>}
+        {/* Footer: count + pagination */}
+        {!loading && (
+          <div style={{ padding:'10px 16px', borderTop:'1px solid var(--gray-100)', fontSize:12, color:'var(--gray-400)', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8 }}>
+            <span>
+              Halaman {page + 1} dari {Math.max(1, totalPages)}
+              {' · '}{totalCount} pengguna{filterRole ? ` (${ROLE_LABELS[filterRole]})` : ''}
+            </span>
+            <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+              {selectedIds.size > 0 && <span style={{ color:'var(--indigo-600)', fontWeight:600, marginRight:8 }}>{selectedIds.size} dipilih (halaman ini)</span>}
+              <button className="btn btn-secondary btn-sm" onClick={() => goToPage(page - 1)} disabled={page === 0}
+                style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 10px' }}>
+                <ChevronLeft size={13}/> Prev
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => goToPage(page + 1)} disabled={page >= totalPages - 1}
+                style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 10px' }}>
+                Next <ChevronRight size={13}/>
+              </button>
+            </div>
           </div>
         )}
       </div>
