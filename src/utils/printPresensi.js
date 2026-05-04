@@ -59,7 +59,10 @@ export async function printPresensi({ supabase, courseId, userId }) {
     .page-break { page-break-after: always; break-after: page; }
 
     /* Header */
-    .header { text-align: center; border-bottom: 3px double #111; padding-bottom: 10px; margin-bottom: 14px; }
+    .header { border-bottom: 3px double #111; padding-bottom: 10px; margin-bottom: 14px; }
+    .header-inner { display: flex; align-items: center; gap: 16px; }
+    .header-logo  { width: 64px; height: 64px; object-fit: contain; flex-shrink: 0; }
+    .header-text  { text-align: center; flex: 1; }
     .header .inst  { font-size: 10pt; letter-spacing: 1px; text-transform: uppercase; }
     .header .title { font-size: 16pt; font-weight: bold; margin: 6px 0 4px; text-transform: uppercase; letter-spacing: 2px; }
     .header .sub   { font-size: 11pt; }
@@ -168,14 +171,13 @@ export async function printPresensi({ supabase, courseId, userId }) {
           <td class="center">${st.nim || '—'}</td>
           <td>${st.full_name}</td>
           <td class="center">${stLabel}</td>
-          <td class="center">${jam}</td>
           <td style="width:90px">&nbsp;</td>
         </tr>`
     }).join('')
 
     const isLast = si === sessions.length - 1
     return `
-      <div class="${isLast ? '' : 'page-break'}">
+      <div style="margin-top: ${si === 0 ? '0' : '36px'}; ${isLast ? '' : 'padding-bottom:24px; border-bottom: 2px dashed #ccc;'}">
         <div class="section-title">
           Daftar Hadir — Pertemuan ${sess.meeting_number}: ${sess.title}
         </div>
@@ -190,7 +192,6 @@ export async function printPresensi({ supabase, courseId, userId }) {
               <th style="width:110px">NIM</th>
               <th>Nama Mahasiswa</th>
               <th style="width:70px">Status</th>
-              <th style="width:70px">Jam Masuk</th>
               <th style="width:90px">Tanda Tangan</th>
             </tr>
           </thead>
@@ -233,9 +234,14 @@ export async function printPresensi({ supabase, courseId, userId }) {
 <!-- ════════════════ HALAMAN 1: JURNAL PEMBELAJARAN ════════════════ -->
 <div class="page page-break">
   <div class="header">
-    <div class="inst">STIKOM Yos Sudarso Purwokerto</div>
-    <div class="title">Jurnal Perkuliahan</div>
-    <div class="sub">Tahun Akademik ${course.semester}</div>
+    <div class="header-inner">
+      <img class="header-logo" src="https://i.ibb.co.com/kgV7WDhF/Logo-SYS.png" alt="STIKOM"/>
+      <div class="header-text">
+        <div class="inst">STIKOM Yos Sudarso Purwokerto</div>
+        <div class="title">Jurnal Perkuliahan</div>
+        <div class="sub">Tahun Akademik ${course.semester}</div>
+      </div>
+    </div>
   </div>
 
   <div class="info-grid">
@@ -285,8 +291,13 @@ export async function printPresensi({ supabase, courseId, userId }) {
 <!-- ════════════════ HALAMAN 2: REKAP DAFTAR HADIR ════════════════ -->
 <div class="page page-break">
   <div class="header">
-    <div class="title">Rekap Daftar Hadir Mahasiswa</div>
-    <div class="sub">${course.code} — ${course.name} | ${course.semester}</div>
+    <div class="header-inner">
+      <img class="header-logo" src="https://i.ibb.co.com/kgV7WDhF/Logo-SYS.png" alt="STIKOM"/>
+      <div class="header-text">
+        <div class="title">Rekap Daftar Hadir Mahasiswa</div>
+        <div class="sub">${course.code} — ${course.name} | ${course.semester}</div>
+      </div>
+    </div>
   </div>
 
   <div class="section-title">Rekap Kehadiran</div>
