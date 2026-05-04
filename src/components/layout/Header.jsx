@@ -85,9 +85,9 @@ export default function Header() {
         // 2. Mahasiswa: tugas yang baru dinilai
         role === 'mahasiswa'
           ? supabase.from('submissions')
-              .select('id, score, updated_at, assignment:assignments(title)')
+              .select('id, grade, updated_at, assignment:assignments(title)')
               .eq('student_id', user.id)
-              .not('score', 'is', null)
+              .not('grade', 'is', null)
               .gte('updated_at', since7d)
               .order('updated_at', { ascending: false })
               .limit(5)
@@ -107,7 +107,7 @@ export default function Header() {
           ? supabase.from('submissions')
               .select('id, submitted_at, student:profiles(full_name), assignment:assignments!inner(title, course:courses!inner(dosen_id))')
               .eq('assignment.course.dosen_id', user.id)
-              .is('score', null)
+              .is('grade', null)
               .order('submitted_at', { ascending: false })
               .limit(5)
           : Promise.resolve({ data: null }),
@@ -121,7 +121,7 @@ export default function Header() {
       ;(gradedRes.data || []).forEach(s => items.push({
         id: `grade-${s.id}`, type: 'grade',
         text: `Nilai masuk: ${s.assignment?.title || 'Tugas'}`,
-        sub: `Nilai: ${s.score}`,          time: s.updated_at,
+        sub: `Nilai: ${s.grade}`,          time: s.updated_at,
       }))
       ;(asgnRes.data   || []).forEach(a => items.push({
         id: `asgn-${a.id}`,  type: 'assignment',
