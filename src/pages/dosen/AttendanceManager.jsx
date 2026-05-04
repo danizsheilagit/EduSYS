@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth }  from '@/contexts/AuthContext'
+import { withRetry } from '@/lib/withRetry'
 import toast from 'react-hot-toast'
 import AttendanceManual    from './AttendanceManual'
 import AttendanceAnalytics from './AttendanceAnalytics'
@@ -50,11 +51,15 @@ export default function AttendanceManager() {
   }, [user])
 
   useEffect(() => {
-    if (courseId) { fetchSessions(); fetchStudents() }
+    if (courseId) {
+      // Parallel: fetch sessions + students sekaligus
+      setLoading(true)
+      Promise.all([ fetchSessions(), fetchStudents() ])
+        .finally(() => setLoading(false))
+    }
   }, [courseId])
 
   async function fetchSessions() {
-    setLoading(true)
     const { data } = await supabase
       .from('attendance_sessions')
       .select('*, attendances(count)')
@@ -62,7 +67,6 @@ export default function AttendanceManager() {
       .eq('dosen_id', user.id)
       .order('created_at', { ascending: false })
     setSessions(data || [])
-    setLoading(false)
   }
 
   async function fetchStudents() {
@@ -78,13 +82,15 @@ export default function AttendanceManager() {
     setSaving(true)
     const code       = genCode()
     const expires_at = new Date(Date.now() + form.duration * 60 * 1000).toISOString()
-    const { error } = await supabase.from('attendance_sessions').insert({
-      course_id: courseId, dosen_id: user.id,
-      meeting_number: form.meeting_number,
-      title: form.title.trim(), code, expires_at, is_active: true,
-    })
+    const { error } = await withRetry(() =>
+      supabase.from('attendance_sessions').insert({
+        course_id: courseId, dosen_id: user.id,
+        meeting_number: form.meeting_number,
+        title: form.title.trim(), code, expires_at, is_active: true,
+      })
+    )
     setSaving(false)
-    if (error) { toast.error('Gagal membuat sesi'); return }
+    if (error) { toast.error('Gagal membuat sesi — coba lagi'); return }
     toast.success('Sesi absensi dibuat!')
     setShowForm(false)
     setForm(f => ({ ...f, meeting_number: f.meeting_number + 1 }))
@@ -92,19 +98,23 @@ export default function AttendanceManager() {
   }
 
   async function closeSession(id) {
-    await supabase.from('attendance_sessions').update({ is_active: false }).eq('id', id)
-    toast.success('Sesi ditutup')
-    fetchSessions()
+    const { error } = await withRetry(() =>
+      supabase.from('attendance_sessions').update({ is_active: false }).eq('id', id)
+    )
+    if (error) toast.error('Gagal menutup sesi')
+    else { toast.success('Sesi ditutup'); fetchSessions() }
   }
 
   async function updateStatus(sessionId, studentId, status) {
-    // Upsert attendance record
-    const { error } = await supabase.from('attendances').upsert({
-      session_id: sessionId, student_id: studentId, status,
-    }, { onConflict: 'session_id,student_id' })
-    if (!error) toast.success('Status diperbarui')
-    // Re-fetch expanded session
-    fetchSessionDetail(sessionId)
+    const { error } = await withRetry(
+      () => supabase.from('attendances').upsert({
+        session_id: sessionId, student_id: studentId, status,
+      }, { onConflict: 'session_id,student_id' }),
+      { retries: 3, onRetry: ({ attempt }) => toast.loading(`Menyimpan absen... (${attempt}/3)`, { id: 'retry-att' }) }
+    )
+    toast.dismiss('retry-att')
+    if (error) toast.error('Gagal menyimpan absensi — coba lagi')
+    else { toast.success('Status diperbarui'); fetchSessionDetail(sessionId) }
   }
 
   const [details, setDetails] = useState({}) // sessionId -> [{student, attendance}]

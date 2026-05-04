@@ -94,16 +94,17 @@ export default function MahasiswaDashboard() {
   }
 
   async function fetchStats() {
-    const [{ count: tasks }, { count: completed }, { data: semData }] = await Promise.all([
+    // Step 1: Ambil semester aktif + submission counts sekaligus (parallel)
+    const [{ data: semData }, { count: tasks }, { count: completed }] = await Promise.all([
+      supabase.from('semesters').select('id').eq('is_active', true).maybeSingle(),
       supabase.from('submissions').select('*', { count: 'exact', head: true }).eq('student_id', user.id),
       supabase.from('submissions').select('*', { count: 'exact', head: true }).eq('student_id', user.id).eq('status', 'graded'),
-      supabase.from('semesters').select('id').eq('is_active', true).single(),
     ])
 
     let totalPoints = 0, myRankNum = '-'
 
     if (semData?.id) {
-      // Sum all points in active semester
+      // Step 2a: Ambil total points (sudah parallel dengan step 1 tidak bisa, tapi semester jarang berubah)
       const { data: ptData } = await supabase
         .from('points_log')
         .select('points')
@@ -111,8 +112,8 @@ export default function MahasiswaDashboard() {
         .eq('semester_id', semData.id)
       totalPoints = (ptData || []).reduce((s, r) => s + (r.points || 0), 0)
     } else {
-      // Fallback ke leaderboard lama jika belum ada semester
-      const { data: ld } = await supabase.from('leaderboard').select('total_points,rank').eq('user_id', user.id).single()
+      // Step 2b: Fallback ke leaderboard jika belum ada semester aktif
+      const { data: ld } = await supabase.from('leaderboard').select('total_points,rank').eq('user_id', user.id).maybeSingle()
       totalPoints = ld?.total_points || 0
       myRankNum   = ld?.rank || '-'
     }

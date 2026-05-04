@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
+import { withRetry } from '@/lib/withRetry'
 import FilePreview from '@/components/drive/FilePreview'
 import toast from 'react-hot-toast'
 import Sk from '@/components/ui/Skeleton'
@@ -82,17 +83,25 @@ function TugasTab({ userId }) {
       toast.error(`Nilai harus antara 0–${assignment.max_score}`); return
     }
     setGrading(p => ({ ...p, [sub.id]: { ...p[sub.id], loading: true } }))
-    await supabase.from('submissions').update({
-      grade, feedback: g?.feedback || '', status: 'graded', graded_by: userId, graded_at: new Date().toISOString()
-    }).eq('id', sub.id)
-    toast.success(`Nilai ${sub.student?.full_name} disimpan`)
+    const { error } = await withRetry(
+      () => supabase.from('submissions').update({
+        grade, feedback: g?.feedback || '', status: 'graded',
+        graded_by: userId, graded_at: new Date().toISOString()
+      }).eq('id', sub.id),
+      { retries: 3, onRetry: ({ attempt }) => toast.loading(`Menyimpan... (${attempt}/3)`, { id: 'retry-grade' }) }
+    )
+    toast.dismiss('retry-grade')
+    if (error) { toast.error('Gagal menyimpan nilai — coba lagi'); }
+    else {
+      toast.success(`Nilai ${sub.student?.full_name} disimpan`)
+      setSubmissions(p => ({
+        ...p,
+        [sub.assignment_id]: p[sub.assignment_id]?.map(s =>
+          s.id === sub.id ? { ...s, grade, status: 'graded', feedback: g?.feedback||'' } : s
+        )
+      }))
+    }
     setGrading(p => ({ ...p, [sub.id]: { loading: false } }))
-    setSubmissions(p => ({
-      ...p,
-      [sub.assignment_id]: p[sub.assignment_id]?.map(s =>
-        s.id === sub.id ? { ...s, grade, status: 'graded', feedback: g?.feedback||'' } : s
-      )
-    }))
   }
 
   if (loading) return (
@@ -401,35 +410,40 @@ function RekapTab({ userId }) {
 
   async function saveKeaktifan(studentId, score) {
     const val = score === '' || score === null ? null : Number(score)
-    await supabase.from('student_keaktifan')
-      .upsert({ course_id: courseId, student_id: studentId, dosen_id: userId, score: val },
-               { onConflict: 'course_id,student_id' })
-    setKeaktifan(p => ({ ...p, [studentId]: val }))
+    const { error } = await withRetry(() =>
+      supabase.from('student_keaktifan')
+        .upsert({ course_id: courseId, student_id: studentId, dosen_id: userId, score: val },
+                 { onConflict: 'course_id,student_id' })
+    )
+    if (!error) setKeaktifan(p => ({ ...p, [studentId]: val }))
+    else toast.error('Gagal simpan keaktifan')
   }
 
   async function saveWeightConfig() {
     setSavingCfg(true)
-    await supabase.from('course_grading_config')
-      .upsert({ course_id: courseId, dosen_id: userId, config: weights }, { onConflict: 'course_id,dosen_id' })
-    toast.success('Konfigurasi bobot disimpan')
+    const { error } = await withRetry(() =>
+      supabase.from('course_grading_config')
+        .upsert({ course_id: courseId, dosen_id: userId, config: weights }, { onConflict: 'course_id,dosen_id' })
+    )
+    if (error) toast.error('Gagal menyimpan bobot')
+    else toast.success('Konfigurasi bobot disimpan')
     setSavingCfg(false)
   }
 
   async function buildMatrix(cid) {
     setLoading(true); setMatrix(null)
 
-    const { data: enrollments } = await supabase.from('enrollments')
-      .select('student:profiles(id, full_name, nim)').eq('course_id', cid)
-    const students = (enrollments || []).map(e => e.student).filter(Boolean)
-      .sort((a, b) => (a.nim || '').localeCompare(b.nim || ''))
-
-    const { data: assignments } = await supabase.from('assignments')
-      .select('id, title, max_score, submissions(student_id, grade, status)')
-      .eq('course_id', cid).order('created_at')
-
-    const { data: exams } = await supabase.from('exams')
-      .select('id, title, type, exam_mode, exam_answers(student_id, score, submitted_at)')
-      .eq('course_id', cid).eq('is_published', true).order('start_at')
+    // Parallel: fetch semua data sekaligus
+    const [{ data: enrollments }, { data: assignments }, { data: exams }] = await Promise.all([
+      supabase.from('enrollments')
+        .select('student:profiles(id, full_name, nim)').eq('course_id', cid),
+      supabase.from('assignments')
+        .select('id, title, max_score, submissions(student_id, grade, status)')
+        .eq('course_id', cid).order('created_at'),
+      supabase.from('exams')
+        .select('id, title, type, exam_mode, exam_answers(student_id, score, submitted_at)')
+        .eq('course_id', cid).eq('is_published', true).order('start_at'),
+    ])
 
     const tugasCols = (assignments || []).map(a => ({
       key: 'tugas_' + a.id, label: a.title, max: a.max_score, kind: 'tugas',
