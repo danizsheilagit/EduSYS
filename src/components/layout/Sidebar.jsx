@@ -15,12 +15,13 @@ const LOGO_URL = 'https://i.ibb.co.com/kgV7WDhF/Logo-SYS.png'
 
 // Sub-items per role inside a course
 const DOSEN_COURSE_SUBS = [
-  { label:'Materi',    icon: BookMarked,    key:'materi',    to: (id) => `/materi?courseId=${id}`    },
-  { label:'Tugas',     icon: ClipboardList, key:'tugas',     to: (id) => `/tugas?courseId=${id}`     },
-  { label:'Forum',     icon: MessageSquare, key:'forum',     to: (id) => `/forum?courseId=${id}`     },
-  { label:'Ujian',     icon: FileText,      key:'ujian',     to: (id) => `/ujian?courseId=${id}`     },
-  { label:'Bank Soal', icon: Database,      key:'bank-soal', to: (id) => `/bank-soal?courseId=${id}` },
-  { label:'Presensi',  icon: UserCheck,     key:'presensi',  to: (id) => `/absensi?courseId=${id}`  },
+  { label:'Materi',       icon: BookMarked,    key:'materi',      to: (id) => `/materi?courseId=${id}`       },
+  { label:'Tugas',        icon: ClipboardList, key:'tugas',       to: (id) => `/tugas?courseId=${id}`        },
+  { label:'Forum',        icon: MessageSquare, key:'forum',       to: (id) => `/forum?courseId=${id}`        },
+  { label:'Ujian',        icon: FileText,      key:'ujian',       to: (id) => `/ujian?courseId=${id}`        },
+  { label:'Bank Soal',    icon: Database,      key:'bank-soal',   to: (id) => `/bank-soal?courseId=${id}`    },
+  { label:'Presensi',     icon: UserCheck,     key:'presensi',    to: (id) => `/absensi?courseId=${id}`      },
+  { label:'Leaderboard',  icon: Trophy,        key:'leaderboard', to: (id) => `/leaderboard?courseId=${id}`  },
 ]
 
 const STATIC_NAV = {

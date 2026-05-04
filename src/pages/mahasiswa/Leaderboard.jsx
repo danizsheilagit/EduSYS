@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Trophy, Star, Zap, TrendingUp, BookOpen } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -25,6 +26,8 @@ const BAR_COLORS = [
 
 export default function Leaderboard() {
   const { user, profile } = useAuth()
+  const role = profile?.role || 'mahasiswa'
+  const [searchParams]              = useSearchParams()
   const [courses,    setCourses]    = useState([])
   const [courseId,   setCourseId]   = useState('')
   const [semester,   setSemester]   = useState(null)
@@ -33,20 +36,39 @@ export default function Leaderboard() {
   const [animated,   setAnimated]   = useState(false)
   const animRef = useRef(null)
 
-  // Fetch enrolled courses
+  // Fetch courses (berbeda antara dosen & mahasiswa)
   useEffect(() => {
-    supabase.from('enrollments')
-      .select('course:courses(id,name,code)')
-      .eq('student_id', user?.id)
-      .then(({ data }) => {
-        const list = (data || []).map(e => e.course).filter(Boolean)
-        setCourses(list)
-        if (list.length) setCourseId(list[0].id)
-      })
+    if (!user) return
+    const paramId = searchParams.get('courseId')
+
+    if (role === 'dosen') {
+      // Dosen: ambil semua mata kuliah yang diampu
+      supabase.from('courses').select('id,name,code').eq('dosen_id', user.id).eq('is_active', true).order('code')
+        .then(({ data: list }) => {
+          setCourses(list || [])
+          const match = paramId && (list || []).find(c => c.id === paramId)
+          setCourseId(match ? paramId : (list?.[0]?.id || ''))
+        })
+    } else {
+      // Mahasiswa: ambil mata kuliah yang diikuti
+      supabase.from('enrollments').select('course:courses(id,name,code)').eq('student_id', user.id)
+        .then(({ data }) => {
+          const list = (data || []).map(e => e.course).filter(Boolean)
+          setCourses(list)
+          const match = paramId && list.find(c => c.id === paramId)
+          setCourseId(match ? paramId : (list[0]?.id || ''))
+        })
+    }
     // Fetch active semester
     supabase.from('semesters').select('*').eq('is_active', true).single()
       .then(({ data }) => setSemester(data))
   }, [user])
+
+  // Jika courseId dari URL berubah (navigasi antar MK di sidebar), update selection
+  useEffect(() => {
+    const paramId = searchParams.get('courseId')
+    if (paramId && courses.find(c => c.id === paramId)) setCourseId(paramId)
+  }, [searchParams])
 
   useEffect(() => { if (courseId && semester) fetchLeaderboard() }, [courseId, semester])
 
@@ -60,7 +82,6 @@ export default function Leaderboard() {
       .limit(50)
     setData(data || [])
     setLoading(false)
-    // Trigger bar animation after render
     setTimeout(() => setAnimated(true), 80)
   }
 
@@ -97,7 +118,11 @@ export default function Leaderboard() {
         <div className="empty-state card" style={{ padding:60 }}>
           <Trophy size={32} color="var(--gray-200)"/>
           <p className="empty-state-text">Belum ada poin di mata kuliah ini</p>
-          <p className="empty-state-sub">Buka materi, kerjakan tugas, ikuti ujian, dan posting di forum untuk mendapatkan poin</p>
+          <p className="empty-state-sub">
+            {role === 'dosen'
+              ? 'Mahasiswa belum mendapatkan poin di mata kuliah ini'
+              : 'Buka materi, kerjakan tugas, ikuti ujian, dan posting di forum untuk mendapatkan poin'}
+          </p>
         </div>
       )}
 
