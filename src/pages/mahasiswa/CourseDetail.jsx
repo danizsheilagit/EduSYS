@@ -137,9 +137,33 @@ function getEmbedUrl(mime, url = '') {
   return null
 }
 
+/* ── Countdown ring SVG helper ──────────────────────────────── */
+const COUNTDOWN_SEC = 180
+function CountdownRing({ seconds }) {
+  const r = 12, circ = 2 * Math.PI * r
+  const pct  = ((COUNTDOWN_SEC - seconds) / COUNTDOWN_SEC)
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return (
+    <div style={{ width:28, height:28, flexShrink:0, position:'relative' }}>
+      <svg width="28" height="28" style={{ transform:'rotate(-90deg)', position:'absolute', inset:0 }}>
+        <circle cx="14" cy="14" r={r} fill="none" stroke="#e5e7eb" strokeWidth="2.5"/>
+        <circle cx="14" cy="14" r={r} fill="none" stroke="#f59e0b" strokeWidth="2.5"
+          strokeDasharray={circ} strokeDashoffset={circ * (1 - pct)}
+          style={{ transition:'stroke-dashoffset .9s linear' }}/>
+      </svg>
+      <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:6.5, fontWeight:800, color:'#d97706', lineHeight:1 }}>
+        {mins}:{String(secs).padStart(2,'0')}
+      </div>
+    </div>
+  )
+}
+
 /* ── Single attachment row ───────────────────────────────────── */
-function AttachItem({ attach, matId, idx, userId, onUpdate, onFirstOpen }) {
-  const [open,     setOpen]   = useState(false)
+function AttachItem({ attach, matId, idx, userId, isCompleted, onMarkDone, onUpdate, onFirstOpen }) {
+  const [open,      setOpen]      = useState(false)
+  const [countdown, setCountdown] = useState(COUNTDOWN_SEC)
+  const timerRef = useRef(null)
   const [, tick]   = useState(0)
   const rerender   = () => tick(n => n + 1)
 
@@ -149,12 +173,28 @@ function AttachItem({ attach, matId, idx, userId, onUpdate, onFirstOpen }) {
   const embed = getEmbedUrl(attach.mime, attach.url)
   const ytId  = attach.mime === 'video/youtube' ? getYouTubeId(attach.url) : null
 
-  const status = prog.completed ? 'selesai' : prog.opened ? 'dibuka' : 'belum'
+  const status = isCompleted ? 'selesai' : prog.opened ? 'dibuka' : 'belum'
   const SC = {
     belum:   { label:'Belum Dibuka',      color:'var(--gray-400)', bg:'var(--gray-100)', dot:'#9ca3af' },
     dibuka:  { label:'Sedang Dipelajari', color:'#2563eb',         bg:'#dbeafe',         dot:'#2563eb' },
     selesai: { label:'✓ Selesai',         color:'#16a34a',         bg:'#dcfce7',         dot:'#16a34a' },
   }[status]
+
+  // Start/stop 3-min countdown when expanded
+  useEffect(() => {
+    if (open && !isCompleted) {
+      setCountdown(COUNTDOWN_SEC)
+      timerRef.current = setInterval(() => {
+        setCountdown(c => {
+          if (c <= 1) { clearInterval(timerRef.current); return 0 }
+          return c - 1
+        })
+      }, 1000)
+    } else {
+      clearInterval(timerRef.current)
+    }
+    return () => clearInterval(timerRef.current)
+  }, [open, isCompleted])
 
   function handleToggleOpen(e) {
     e.stopPropagation?.()
@@ -163,20 +203,40 @@ function AttachItem({ attach, matId, idx, userId, onUpdate, onFirstOpen }) {
     if (next && !prog.opened) {
       saveProg(userId, key, { opened: true, openedAt: Date.now() })
       rerender(); onUpdate?.()
-      onFirstOpen?.()   // ← award materi points on first open
+      onFirstOpen?.()
     }
   }
-  function markDone(e) {
+
+  function tryMarkDone(e) {
     e.stopPropagation()
-    saveProg(userId, key, { opened: true, completed: true, completedAt: Date.now() })
-    rerender(); onUpdate?.()
+    if (countdown > 0 || isCompleted) return
+    onMarkDone?.(idx)
   }
-  function markUndone(e) {
-    e.stopPropagation()
-    const d = getProg(userId)
-    if (d[key]) { d[key].completed = false; delete d[key].completedAt }
-    localStorage.setItem(`edusys_mp_${userId}`, JSON.stringify(d))
-    rerender(); onUpdate?.()
+
+  // Shared "Selesai" button shown in every content type's action bar
+  function SelesaiBtn() {
+    if (isCompleted) return (
+      <span style={{ fontSize:12, color:'#16a34a', fontWeight:700, display:'flex', alignItems:'center', gap:5 }}>
+        ✓ Sudah Dipelajari
+      </span>
+    )
+    const ready = countdown === 0
+    return (
+      <button onClick={tryMarkDone} disabled={!ready}
+        style={{
+          display:'flex', alignItems:'center', gap:6, padding:'7px 18px',
+          borderRadius:20, border:'none', fontSize:12, fontWeight:700,
+          cursor: ready ? 'pointer' : 'not-allowed', transition:'all .3s',
+          background: ready ? '#16a34a' : 'var(--gray-100)',
+          color:      ready ? '#fff'    : 'var(--gray-400)',
+          boxShadow:  ready ? '0 2px 8px #16a34a40' : 'none',
+          animation:  ready ? 'pulse-green 1.5s infinite' : 'none',
+        }}>
+        {ready
+          ? '✓ Selesai Dipelajari (+3 pts)'
+          : `⏱ ${Math.floor(countdown/60)}:${String(countdown%60).padStart(2,'0')} tersisa`}
+      </button>
+    )
   }
 
   return (
@@ -184,36 +244,32 @@ function AttachItem({ attach, matId, idx, userId, onUpdate, onFirstOpen }) {
 
       {/* ── Header row ── */}
       <div onClick={handleToggleOpen} style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 14px', cursor:'pointer', background: status==='selesai' ? '#f0fdf4' : open ? t.bg+'80' : '#fff', transition:'background .2s', userSelect:'none' }}>
-        {/* Type icon */}
         <div style={{ width:34, height:34, borderRadius:8, background:t.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, flexShrink:0, border:`1.5px solid ${t.color}25` }}>
           {t.icon}
         </div>
-        {/* Label + hint */}
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontWeight:700, fontSize:13, color:'var(--gray-900)' }}>{attach.label || t.label}</div>
           <div style={{ fontSize:11, color:'var(--gray-400)', marginTop:1 }}>
-            {embed ? 'Klik untuk buka preview' : 'Klik untuk lihat opsi'}
+            {!isCompleted && open && countdown > 0
+              ? <span style={{ color:'#d97706', fontWeight:600 }}>⏱ Baca {Math.floor(countdown/60)}:{String(countdown%60).padStart(2,'0')} lagi untuk dapat poin</span>
+              : embed ? 'Klik untuk buka preview' : 'Klik untuk lihat opsi'}
           </div>
         </div>
-        {/* Status label (hidden on mobile) */}
+        {/* Status pill */}
         <span style={{ fontSize:11, fontWeight:600, color:SC.color, display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>
           <span style={{ width:6, height:6, borderRadius:'50%', background:SC.dot, display:'inline-block' }}/>
           {SC.label}
         </span>
-        {/* ✅ Quick-check circle — toggle done without expanding */}
-        <button
-          onClick={e => { status !== 'selesai' ? markDone(e) : markUndone(e) }}
-          title={status === 'selesai' ? 'Tandai Belum Selesai' : 'Tandai Selesai'}
-          style={{
-            width:28, height:28, borderRadius:'50%', flexShrink:0, cursor:'pointer',
-            background: status === 'selesai' ? '#16a34a' : '#fff',
-            border: status === 'selesai' ? 'none' : '2px solid var(--gray-300)',
-            display:'flex', alignItems:'center', justifyContent:'center',
-            fontSize:13, color: status === 'selesai' ? '#fff' : 'transparent',
-            transition:'all .2s', boxShadow: status === 'selesai' ? '0 2px 6px #16a34a50' : 'none',
-          }}
-        >✓</button>
-        {/* Expand chevron */}
+        {/* Right indicator: done ✓, countdown ring, or empty circle */}
+        {isCompleted ? (
+          <div style={{ width:28, height:28, borderRadius:'50%', background:'#16a34a', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, color:'#fff', flexShrink:0, boxShadow:'0 2px 6px #16a34a50' }}>✓</div>
+        ) : open && countdown > 0 ? (
+          <CountdownRing seconds={countdown}/>
+        ) : open && countdown === 0 ? (
+          <div style={{ width:28, height:28, borderRadius:'50%', border:'2px solid #16a34a', background:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, color:'#16a34a', flexShrink:0, animation:'pulse-ring 1.5s infinite' }}>✓</div>
+        ) : (
+          <div style={{ width:28, height:28, borderRadius:'50%', border:'2px solid var(--gray-200)', flexShrink:0 }}/>
+        )}
         <span style={{ color:'var(--gray-400)', fontSize:11, transform: open ? 'rotate(180deg)' : 'none', transition:'transform .2s', flexShrink:0 }}>▾</span>
       </div>
 
@@ -222,35 +278,20 @@ function AttachItem({ attach, matId, idx, userId, onUpdate, onFirstOpen }) {
         <div style={{ borderTop:'1px solid var(--gray-100)' }}>
           {embed ? (
             <>
-              {/* iframe viewer */}
               <div style={{ position:'relative', width:'100%', aspectRatio: attach.mime==='video/youtube' ? '16/9' : '4/3', background:'#111' }}>
-                <iframe
-                  src={embed}
-                  title={attach.label || t.label}
+                <iframe src={embed} title={attach.label || t.label}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-                  allowFullScreen
-                  style={{ width:'100%', height:'100%', border:'none', display:'block' }}
-                />
+                  allowFullScreen style={{ width:'100%', height:'100%', border:'none', display:'block' }}/>
               </div>
-              {/* Action bar */}
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 14px', background:'#f9fafb', borderTop:'1px solid var(--gray-100)' }}>
                 <a href={attach.url} target="_blank" rel="noopener noreferrer"
                   style={{ fontSize:12, color:'var(--gray-400)', display:'flex', alignItems:'center', gap:4, textDecoration:'none' }}>
                   <ExternalLink size={12}/> Buka di tab baru
                 </a>
-                {status !== 'selesai' ? (
-                  <button onClick={markDone} style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 18px', borderRadius:20, border:'none', background:'#16a34a', color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer', boxShadow:'0 2px 8px #16a34a40' }}>
-                    ✓ Tandai Selesai
-                  </button>
-                ) : (
-                  <button onClick={markUndone} style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:20, border:'1px solid var(--gray-200)', background:'#fff', color:'var(--gray-500)', fontSize:12, fontWeight:600, cursor:'pointer' }}>
-                    ↩ Belum Selesai
-                  </button>
-                )}
+                <SelesaiBtn/>
               </div>
             </>
           ) : attach.mime === 'video/youtube' && ytId ? (
-            /* YouTube thumbnail card (embed blocked/restricted) */
             <div style={{ padding:16 }}>
               <a href={attach.url} target="_blank" rel="noopener noreferrer"
                 onClick={() => { if (!prog.opened) { saveProg(userId, key, { opened:true, openedAt:Date.now() }); rerender(); onUpdate?.() } }}
@@ -260,53 +301,27 @@ function AttachItem({ attach, matId, idx, userId, onUpdate, onFirstOpen }) {
                   <div style={{ width:56, height:56, borderRadius:'50%', background:'#ff0000', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 4px 16px rgba(0,0,0,.5)' }}>
                     <span style={{ fontSize:24, marginLeft:4 }}>▶</span>
                   </div>
-                  <span style={{ color:'#fff', fontSize:12, fontWeight:700, background:'rgba(0,0,0,.5)', padding:'4px 12px', borderRadius:20 }}>
-                    Buka di YouTube
-                  </span>
+                  <span style={{ color:'#fff', fontSize:12, fontWeight:700, background:'rgba(0,0,0,.5)', padding:'4px 12px', borderRadius:20 }}>Buka di YouTube</span>
                 </div>
               </a>
-              <div style={{ display:'flex', justifyContent:'flex-end', marginTop:10 }}>
-                {status !== 'selesai' ? (
-                  <button onClick={markDone} style={{ padding:'7px 18px', borderRadius:20, border:'none', background:'#16a34a', color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer', boxShadow:'0 2px 8px #16a34a40' }}>
-                    ✓ Sudah Nonton — Tandai Selesai
-                  </button>
-                ) : (
-                  <button onClick={markUndone} style={{ padding:'7px 14px', borderRadius:20, border:'1px solid var(--gray-200)', background:'#fff', color:'var(--gray-500)', fontSize:12, fontWeight:600, cursor:'pointer' }}>
-                    ↩ Belum Selesai
-                  </button>
-                )}
-              </div>
+              <div style={{ display:'flex', justifyContent:'flex-end', marginTop:10 }}><SelesaiBtn/></div>
             </div>
           ) : (
-            /* Non-embeddable (artikel/web) */
             <div style={{ padding:'20px 16px', background:'#f9fafb' }}>
               <div style={{ display:'flex', alignItems:'flex-start', gap:14 }}>
                 <div style={{ width:44, height:44, borderRadius:10, background:t.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:24, flexShrink:0 }}>{t.icon}</div>
                 <div style={{ flex:1 }}>
                   <div style={{ fontWeight:700, fontSize:13, color:'var(--gray-800)', marginBottom:4 }}>{attach.label || t.label}</div>
                   <div style={{ fontSize:12, color:'var(--gray-500)', marginBottom:12 }}>
-                    Panduan belajar:
-                    <ol style={{ margin:'6px 0 0 16px', padding:0, lineHeight:1.8, color:'var(--gray-600)', fontSize:12 }}>
-                      <li>Klik <strong>"Buka Konten"</strong> di bawah untuk membaca di tab baru</li>
-                      <li>Setelah selesai membaca, kembali ke halaman ini</li>
-                      <li>Klik <strong>"Tandai Selesai"</strong> atau tekan ✓ di baris atas</li>
-                    </ol>
+                    Buka konten di tab baru, pelajari minimal 3 menit, lalu kembali dan klik "Selesai Dipelajari" untuk mendapat poin.
                   </div>
-                  <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+                  <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center' }}>
                     <a href={attach.url} target="_blank" rel="noopener noreferrer"
                       onClick={() => { if (!prog.opened) { saveProg(userId, key, { opened:true, openedAt:Date.now() }); rerender(); onUpdate?.() } }}
                       style={{ padding:'8px 18px', borderRadius:20, background:t.color, color:'#fff', fontSize:13, fontWeight:700, textDecoration:'none', display:'flex', alignItems:'center', gap:6, boxShadow:`0 2px 8px ${t.color}40` }}>
                       {t.icon} Buka Konten
                     </a>
-                    {status !== 'selesai' ? (
-                      <button onClick={markDone} style={{ padding:'8px 18px', borderRadius:20, border:'none', background:'#16a34a', color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', boxShadow:'0 2px 8px #16a34a40' }}>
-                        ✓ Tandai Selesai
-                      </button>
-                    ) : (
-                      <button onClick={markUndone} style={{ padding:'8px 14px', borderRadius:20, border:'1px solid var(--gray-200)', background:'#fff', color:'var(--gray-500)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
-                        ↩ Belum Selesai
-                      </button>
-                    )}
+                    <SelesaiBtn/>
                   </div>
                 </div>
               </div>
@@ -320,87 +335,53 @@ function AttachItem({ attach, matId, idx, userId, onUpdate, onFirstOpen }) {
 
 
 /* ── Materi Tab ──────────────────────────────────────────────── */
+const STORAGE_VER = 'v2_countdown'
 function MateriTab({ courseId, userId }) {
-  const [items,   setItems]   = useState([])
-  const [views,   setViews]   = useState({})   // material_id -> {points_awarded}
-  const [loading, setLoading] = useState(true)
+  const [items,         setItems]         = useState([])
+  const [completedRefs, setCompletedRefs] = useState(new Set()) // 'mat_{id}_{idx}'
+  const [loading,       setLoading]       = useState(true)
   const [, tick]  = useState(0)
   const rerender  = () => tick(n => n + 1)
 
   useEffect(() => {
+    // Reset localStorage jika versi lama (hapus progress completed)
+    if (localStorage.getItem('edusys_mat_ver') !== STORAGE_VER) {
+      Object.keys(localStorage).filter(k => k.startsWith('edusys_mp_')).forEach(k => localStorage.removeItem(k))
+      localStorage.setItem('edusys_mat_ver', STORAGE_VER)
+    }
+    // Load materials + completed refs dari points_log
     Promise.all([
       supabase.from('materials').select('*').eq('course_id', courseId).order('week_number').order('created_at'),
-      supabase.from('material_views').select('material_id,points_awarded').eq('student_id', userId),
-    ]).then(([{ data: mats }, { data: mv }]) => {
+      supabase.from('points_log').select('reference_id').eq('user_id', userId).eq('source', 'materi'),
+    ]).then(([{ data: mats }, { data: ptLog }]) => {
       setItems(mats || [])
-      const map = {}
-      ;(mv || []).forEach(v => { map[v.material_id] = v })
-      setViews(map)
+      setCompletedRefs(new Set((ptLog || []).map(p => p.reference_id).filter(Boolean)))
       setLoading(false)
-
-      // Retroactive: klaim poin untuk materi yang sudah dibuka via localStorage tapi belum ada di DB
-      // OPTIMIZED: 1 batch upsert + 1 batch insert (bukan N×2 queries)
-      const prog = getProg(userId)
-      const opened = (mats || []).filter(m => {
-        const links = (m.attachments?.length) ? m.attachments : m.webview_link ? [{ mime:m.mime_type, url:m.webview_link, label:'' }] : []
-        const wasOpened = links.some((_, i) => prog[pkey(m.id, i)]?.opened)
-        return wasOpened && !map[m.id]
-      })
-      if (opened.length > 0) {
-        supabase.from('semesters').select('id').eq('is_active', true).single().then(({ data: sem }) => {
-          if (!sem) return
-          // Satu batch upsert untuk semua material_views
-          const viewRows = opened.map(m => ({
-            material_id: m.id, student_id: userId,
-            semester_id: sem.id, points_awarded: true,
-          }))
-          supabase.from('material_views')
-            .upsert(viewRows, { onConflict: 'material_id,student_id' })
-            .then(({ error }) => {
-              if (error) return
-              // Satu batch insert untuk semua points_log
-              const ptRows = opened.map(m => ({
-                user_id: userId, course_id: courseId, semester_id: sem.id,
-                points: 5, source: 'materi',
-                reason: 'Buka materi: ' + m.id, reference_id: m.id,
-              }))
-              supabase.from('points_log').insert(ptRows).then(() => {
-                const extra = {}
-                opened.forEach(m => { extra[m.id] = { points_awarded: true } })
-                setViews(prev => ({ ...prev, ...extra }))
-              })
-            })
-        })
-      }
     })
   }, [courseId])
 
-  // Called when a material is first opened — award +5 pts
-  async function handleMaterialOpen(materialId) {
-    if (views[materialId]) return   // already tracked
-    // Get active semester
-    const { data: sem } = await supabase.from('semesters').select('id').eq('is_active', true).single()
-    // Insert material_view (UPSERT — UNIQUE constraint handles dupes)
-    const { error } = await supabase.from('material_views').upsert({
-      material_id:    materialId,
-      student_id:     userId,
-      semester_id:    sem?.id || null,
-      points_awarded: Boolean(sem),
-    }, { onConflict: 'material_id,student_id' })
+  // Called when mahasiswa klik "Selesai Dipelajari" pada suatu lampiran
+  async function handleMarkDone(materialId, attachIdx) {
+    const refId = `mat_${materialId}_${attachIdx}`
+    if (completedRefs.has(refId)) return  // sudah selesai
+    const { data: sem } = await supabase.from('semesters').select('id').eq('is_active', true).maybeSingle()
+    const { error } = await supabase.from('points_log').insert({
+      user_id:      userId,
+      course_id:    courseId,
+      semester_id:  sem?.id || null,
+      points:       3,
+      source:       'materi',
+      reason:       `Selesai lampiran ${attachIdx + 1}`,
+      reference_id: refId,
+    })
     if (!error) {
-      setViews(prev => ({ ...prev, [materialId]: { points_awarded: Boolean(sem) } }))
-      if (sem) {
-        await supabase.from('points_log').insert({
-          user_id:     userId,
-          course_id:   courseId,
-          semester_id: sem.id,
-          points:      5,
-          source:      'materi',
-          reason:      'Buka materi: ' + materialId,
-          reference_id: materialId,
-        })
-        toast.success('+5 pts ⭐ Poin materi diperoleh!', { duration: 2500 })
-      }
+      setCompletedRefs(prev => new Set([...prev, refId]))
+      toast.success('+3 pts ⭐ Lampiran berhasil dipelajari!', { duration: 2500 })
+      // Upsert material_views agar fitur cetak & analitik tetap berfungsi
+      supabase.from('material_views').upsert(
+        { material_id: materialId, student_id: userId, semester_id: sem?.id || null, points_awarded: true },
+        { onConflict: 'material_id,student_id' }
+      )
     }
   }
 
@@ -434,13 +415,12 @@ function MateriTab({ courseId, userId }) {
 
           {/* Material cards */}
           {mats.map(m => {
-            const links    = (m.attachments?.length) ? m.attachments : m.webview_link ? [{ mime:m.mime_type, url:m.webview_link, label:'' }] : []
-            const prog     = getProg(userId)
-            const doneCount = links.filter((_,i) => prog[pkey(m.id,i)]?.completed).length
+            const links     = (m.attachments?.length) ? m.attachments : m.webview_link ? [{ mime:m.mime_type, url:m.webview_link, label:'' }] : []
+            const doneCount = links.filter((_,i) => completedRefs.has(`mat_${m.id}_${i}`)).length
+            const prog      = getProg(userId)
             const openCount = links.filter((_,i) => prog[pkey(m.id,i)]?.opened).length
-            const pct      = links.length > 0 ? Math.round(doneCount / links.length * 100) : 0
-            const viewInfo = views[m.id]
-            const ptsGiven = viewInfo?.points_awarded
+            const pct       = links.length > 0 ? Math.round(doneCount / links.length * 100) : 0
+            const ptsEarned = doneCount * 3
 
             return (
               <div key={m.id} className="card" style={{ marginBottom:12, overflow:'hidden' }}>
@@ -454,14 +434,10 @@ function MateriTab({ courseId, userId }) {
                     <div>
                       <div style={{ fontWeight:800, fontSize:14, color:'var(--gray-900)', display:'flex', alignItems:'center', gap:8 }}>
                         {m.title}
-                        {/* Points indicator */}
-                        {ptsGiven && (
+                        {ptsEarned > 0 && (
                           <span style={{ fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:99, background:'#fef9c3', color:'#92400e', border:'1px solid #fde68a', display:'flex', alignItems:'center', gap:3, whiteSpace:'nowrap' }}>
-                            <Star size={9} color="#f59e0b" fill="#f59e0b"/> +5 pts
+                            <Star size={9} color="#f59e0b" fill="#f59e0b"/> +{ptsEarned} pts
                           </span>
-                        )}
-                        {viewInfo && !ptsGiven && (
-                          <span style={{ fontSize:10, color:'var(--gray-400)', fontWeight:500 }}>dibuka</span>
                         )}
                       </div>
                       {m.description && <div style={{ fontSize:12, color:'var(--gray-500)', marginTop:3 }}>{m.description}</div>}
@@ -483,8 +459,9 @@ function MateriTab({ courseId, userId }) {
                     {links.map((a, ai) => (
                       <AttachItem
                         key={ai} attach={a} matId={m.id} idx={ai} userId={userId}
+                        isCompleted={completedRefs.has(`mat_${m.id}_${ai}`)}
+                        onMarkDone={(idx) => handleMarkDone(m.id, idx)}
                         onUpdate={rerender}
-                        onFirstOpen={() => handleMaterialOpen(m.id)}
                       />
                     ))}
                   </div>
