@@ -290,8 +290,8 @@ export default function Sidebar() {
       {/* Navigation */}
       <nav style={{ flex:1, paddingBottom:8, overflowY:'auto' }}>
 
-        {/* First section (Beranda) always first */}
-        {groups.slice(0,1).map(({ section, items }) => (
+        {/* First section (Beranda) always first — dosen/mahasiswa only */}
+        {showDynCourse && groups.slice(0,1).map(({ section, items }) => (
           <div key={section} style={{ marginTop:0 }}>
             <div className="sidebar-section-label">{section}</div>
             {items.map(item => <NavItem key={item.to} {...item}/>)}
