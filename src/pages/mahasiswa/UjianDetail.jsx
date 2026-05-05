@@ -12,15 +12,24 @@ export default function UjianDetail() {
   const { id } = useParams()
   const { user } = useAuth()
   const navigate  = useNavigate()
-  const [exam,       setExam]       = useState(null)
-  const [allAttempts,setAllAttempts] = useState([])   // all past attempts
-  const [myAnswer,   setMyAnswer]   = useState(null)  // current/latest attempt
-  const [answers,    setAnswers]    = useState({})
-  const [flagged,    setFlagged]    = useState(new Set())  // ragu-ragu IDs
-  const [currentQ,   setCurrentQ]   = useState(0)          // active question index
-  const [timeLeft,   setTimeLeft]   = useState(null)
-  const [phase,      setPhase]      = useState('loading')
-  const timerRef = useRef(null)
+  const [exam,        setExam]        = useState(null)
+  const [allAttempts, setAllAttempts] = useState([])
+  const [myAnswer,    setMyAnswer]    = useState(null)
+  const [answers,     setAnswers]     = useState({})
+  const [flagged,     setFlagged]     = useState(new Set())
+  const [currentQ,    setCurrentQ]    = useState(0)
+  const [timeLeft,    setTimeLeft]    = useState(null)
+  const [phase,       setPhase]       = useState('loading')
+  // ── Anti-cheat state ───────────────────────────────────────
+  const [violations,      setViolations]      = useState(0)
+  const [violationBanner, setViolationBanner] = useState(false)
+  const [violationModal,  setViolationModal]  = useState(false)
+  const timerRef         = useRef(null)
+  const violationsRef    = useRef(0)          // ref so event handlers get fresh value
+  const lastViolationRef = useRef(0)          // debounce timestamp
+  const phaseRef         = useRef('loading')  // ref so event handlers get fresh phase
+  const MONITOR_MODES    = ['ujian', 'tryout']
+  const MAX_VIOLATIONS   = 3
 
   useEffect(() => { fetchExam() }, [id])
 
@@ -53,6 +62,61 @@ export default function UjianDetail() {
     timerRef.current = setInterval(tick, 1000)
   }
   useEffect(() => () => clearInterval(timerRef.current), [])
+
+  // Keep phaseRef in sync
+  useEffect(() => { phaseRef.current = phase }, [phase])
+
+  // ── Focus / integrity monitoring ───────────────────────────
+  useEffect(() => {
+    if (phase !== 'active') return
+    if (!exam || !MONITOR_MODES.includes(exam.exam_mode || 'ujian')) return
+
+    function triggerViolation(reason) {
+      if (phaseRef.current !== 'active') return
+      // Debounce: ignore if within 2.5s of last violation
+      const now = Date.now()
+      if (now - lastViolationRef.current < 2500) return
+      lastViolationRef.current = now
+
+      violationsRef.current += 1
+      const count = violationsRef.current
+      setViolations(count)
+
+      if (count >= MAX_VIOLATIONS) {
+        // Save violation flag and auto-submit
+        setViolationBanner(false)
+        setViolationModal(false)
+        toast.error('⛔ Ujian dikumpulkan otomatis karena pelanggaran integritas.', { duration: 6000 })
+        // handleSubmit is stale here — trigger via custom event
+        document.dispatchEvent(new CustomEvent('exam-force-submit', { detail: { vcount: count } }))
+      } else if (count === 2) {
+        setViolationModal(true)
+      } else {
+        setViolationBanner(true)
+        setTimeout(() => setViolationBanner(false), 6000)
+      }
+    }
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') triggerViolation('tab_hidden')
+    }
+    const onBlur = () => triggerViolation('window_blur')
+    const onFullscreen = () => {
+      if (!document.fullscreenElement) triggerViolation('fullscreen_exit')
+    }
+    const onForceSubmit = () => handleSubmit(true)
+
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('blur', onBlur)
+    document.addEventListener('fullscreenchange', onFullscreen)
+    document.addEventListener('exam-force-submit', onForceSubmit)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('blur', onBlur)
+      document.removeEventListener('fullscreenchange', onFullscreen)
+      document.removeEventListener('exam-force-submit', onForceSubmit)
+    }
+  }, [phase, exam])
 
   function shuffle(arr) {
     const a = [...arr]
@@ -111,7 +175,6 @@ export default function UjianDetail() {
     const maxAtt = exam.max_attempts || 1
     const doneCount = allAttempts.filter(a => a.submitted_at).length
 
-    // Guard for tryout
     if (mode === 'tryout' && doneCount >= maxAtt) {
       toast.error(`Batas percobaan (${maxAtt}×) sudah tercapai`); return
     }
@@ -133,13 +196,24 @@ export default function UjianDetail() {
     setMyAnswer(data)
     setAllAttempts(prev => [...prev, data])
     setAnswers({})
+    // Reset violation counters for new attempt
+    violationsRef.current = 0
+    lastViolationRef.current = 0
+    setViolations(0)
+    setViolationBanner(false)
+    setViolationModal(false)
     setPhase('active')
     startTimer(exam, data.started_at)
+    // Request fullscreen for monitored modes
+    if (MONITOR_MODES.includes(mode)) {
+      try { await document.documentElement.requestFullscreen() } catch (_) {}
+    }
   }
 
   const handleSubmit = useCallback(async (auto = false) => {
     if (phase !== 'active') return
     clearInterval(timerRef.current)
+    if (document.fullscreenElement) { try { await document.exitFullscreen() } catch (_) {} }
     const now = new Date().toISOString()
     const qs = (myAnswer?.questions_snapshot?.length ? myAnswer.questions_snapshot : exam?.questions) || []
     let score = 0, total = 0
@@ -148,16 +222,20 @@ export default function UjianDetail() {
     })
     const finalScore = myAnswer?.questions_snapshot?.length && total > 0
       ? Math.round((score / total) * 100) : score
+    // Include violation metadata in answers for teacher review
+    const vcount = violationsRef.current
+    const savedAnswers = vcount > 0 ? { ...answers, _violations: vcount } : answers
     const { error } = await supabase.from('exam_answers')
-      .update({ answers, score: finalScore, submitted_at: now })
+      .update({ answers: savedAnswers, score: finalScore, submitted_at: now })
       .eq('id', myAnswer.id)
     if (error) { toast.error('Gagal mengumpulkan ujian'); return }
-    const updated = { ...myAnswer, answers, score: finalScore, submitted_at: now }
+    const updated = { ...myAnswer, answers: savedAnswers, score: finalScore, submitted_at: now }
     setMyAnswer(updated)
     setAllAttempts(prev => prev.map(a => a.id === myAnswer.id ? updated : a))
     setPhase('submitted')
     if (!auto) toast.success('Berhasil dikumpulkan! 🎉')
-    else       toast('Waktu habis — dikumpulkan otomatis', { icon: '⏰' })
+    else if (vcount >= MAX_VIOLATIONS) { /* already toasted */ }
+    else toast('Waktu habis — dikumpulkan otomatis', { icon: '⏰' })
   }, [phase, exam, myAnswer, answers, id])
 
   function formatTime(s) {
@@ -286,13 +364,14 @@ export default function UjianDetail() {
           : (exam.question_config.mudah||0)+(exam.question_config.sedang||0)+(exam.question_config.sulit||0))
       : questions.length
     const blockedTryout = mode === 'tryout' && doneCount >= maxAtt
+    const isMonitored = MONITOR_MODES.includes(mode)
     return (
-      <div style={{ maxWidth:560, margin:'0 auto' }}>
+      <div style={{ maxWidth:580, margin:'0 auto' }}>
         <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)} style={{ marginBottom:16 }}>
           <ArrowLeft size={14}/> Kembali
         </button>
         <div className="card">
-          <div style={{ textAlign:'center', padding:'36px 32px' }}>
+          <div style={{ textAlign:'center', padding:'36px 32px 24px' }}>
             <span style={{ fontSize:11, fontWeight:800, background: MODE_COLOR[mode]+'22', color: MODE_COLOR[mode], padding:'4px 14px', borderRadius:20, marginBottom:12, display:'inline-block' }}>
               {MODE_LABEL[mode]}
             </span>
@@ -317,12 +396,47 @@ export default function UjianDetail() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* ── Integrity rules section ────────────────────── */}
+          {isMonitored && !blockedTryout && (
+            <div style={{ margin:'0 24px 20px', background:'linear-gradient(135deg,#1e1b4b,#312e81)', borderRadius:14, padding:'18px 20px', color:'#fff' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+                <span style={{ fontSize:18 }}>🛡️</span>
+                <span style={{ fontSize:13, fontWeight:800, letterSpacing:.3 }}>Mode Pengawasan Aktif</span>
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:8, fontSize:12, color:'rgba(255,255,255,.85)' }}>
+                {[
+                  { icon:'🖥️', text:'Layar akan masuk ke mode Fullscreen saat ujian dimulai' },
+                  { icon:'👁️', text:'Perpindahan tab atau aplikasi lain akan terdeteksi' },
+                  { icon:'⚠️', text:'Peringatan 1: Banner merah muncul jika Anda berpindah tab' },
+                  { icon:'🚨', text:'Peringatan 2: Modal konfirmasi — satu langkah lagi dari pengumpulan otomatis' },
+                  { icon:'⛔', text:`Pelanggaran ke-${MAX_VIOLATIONS}: Ujian dikumpulkan otomatis & dicatat` },
+                  { icon:'📋', text:'Jumlah pelanggaran disimpan dan dapat dilihat dosen' },
+                ].map((r, i) => (
+                  <div key={i} style={{ display:'flex', gap:10, alignItems:'flex-start' }}>
+                    <span style={{ flexShrink:0 }}>{r.icon}</span>
+                    <span>{r.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Quiz: no monitoring note */}
+          {mode === 'quiz' && (
+            <div style={{ margin:'0 24px 20px', background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:12, padding:'12px 16px', fontSize:12, color:'#166534' }}>
+              ⚡ Mode Quiz tidak diawasi — kerjakan dengan santai!
+            </div>
+          )}
+
+          <div style={{ padding:'0 24px 24px' }}>
             {blockedTryout ? (
               <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'12px', fontSize:13, color:'#dc2626', marginBottom:20 }}>
                 Batas percobaan ({maxAtt}×) sudah tercapai.
               </div>
             ) : (
-              <div style={{ background:'#fef3c7', border:'1px solid #fde68a', borderRadius:8, padding:'12px 14px', fontSize:12, color:'#92400e', marginBottom:24, textAlign:'left' }}>
+              <div style={{ background:'#fef3c7', border:'1px solid #fde68a', borderRadius:8, padding:'12px 14px', fontSize:12, color:'#92400e', marginBottom:16, textAlign:'left' }}>
                 <AlertTriangle size={13} style={{ display:'inline', marginRight:6 }}/>
                 Setelah memulai, timer akan berjalan. Pastikan koneksi internet stabil.
                 {mode !== 'ujian' && ' Soal akan diacak ulang tiap percobaan.'}
@@ -331,7 +445,7 @@ export default function UjianDetail() {
             {!blockedTryout && (
               <button className="btn btn-primary" style={{ width:'100%', justifyContent:'center' }} onClick={handleStart}>
                 {doneCount > 0 ? <RotateCcw size={14}/> : <ChevronRight size={14}/>}
-                {doneCount > 0 ? (mode==='quiz' ? 'Mulai Lagi' : `Coba Lagi (${maxAtt-doneCount} tersisa)`) : 'Mulai'}
+                {doneCount > 0 ? (mode==='quiz' ? 'Mulai Lagi' : `Coba Lagi (${maxAtt-doneCount} tersisa)`) : (isMonitored ? '🛡️ Mulai & Aktifkan Fullscreen' : 'Mulai')}
               </button>
             )}
           </div>
@@ -374,6 +488,63 @@ export default function UjianDetail() {
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'calc(100vh - 56px)', overflow:'hidden', background:'#f8fafc' }}>
+
+      {/* ── Violation Banner (peringatan 1) ───────────────────── */}
+      {violationBanner && (
+        <div style={{
+          position:'fixed', top:0, left:0, right:0, zIndex:9999,
+          background:'linear-gradient(90deg,#dc2626,#b91c1c)',
+          color:'#fff', padding:'12px 24px',
+          display:'flex', alignItems:'center', justifyContent:'space-between',
+          boxShadow:'0 4px 20px rgba(220,38,38,.5)',
+          animation:'slideUp .2s ease',
+        }}>
+          <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+            <span style={{ fontSize:20 }}>⚠️</span>
+            <div>
+              <div style={{ fontSize:14, fontWeight:800 }}>Peringatan {violations}/{MAX_VIOLATIONS} — Jangan tinggalkan halaman ujian!</div>
+              <div style={{ fontSize:12, opacity:.9 }}>Perpindahan tab/aplikasi terdeteksi. {MAX_VIOLATIONS - violations} pelanggaran lagi = dikumpulkan otomatis.</div>
+            </div>
+          </div>
+          <button onClick={() => setViolationBanner(false)}
+            style={{ background:'rgba(255,255,255,.2)', border:'none', color:'#fff', borderRadius:8, padding:'4px 12px', cursor:'pointer', fontSize:12, fontWeight:700 }}>
+            ✕ Tutup
+          </button>
+        </div>
+      )}
+
+      {/* ── Violation Modal (peringatan 2) ─────────────────────── */}
+      {violationModal && (
+        <div style={{
+          position:'fixed', inset:0, zIndex:10000,
+          background:'rgba(0,0,0,.7)', backdropFilter:'blur(4px)',
+          display:'flex', alignItems:'center', justifyContent:'center',
+        }}>
+          <div style={{
+            background:'#fff', borderRadius:20, padding:'36px 32px', maxWidth:420, width:'90%',
+            textAlign:'center', boxShadow:'0 20px 60px rgba(0,0,0,.4)',
+            animation:'scaleIn .2s ease',
+          }}>
+            <div style={{ fontSize:48, marginBottom:12 }}>🚨</div>
+            <h2 style={{ fontSize:20, fontWeight:900, color:'#dc2626', marginBottom:8 }}>Peringatan Ke-2!</h2>
+            <p style={{ fontSize:13, color:'var(--gray-600)', lineHeight:1.7, marginBottom:20 }}>
+              Anda terdeteksi meninggalkan halaman ujian <strong>2 kali</strong>.<br/>
+              <strong style={{ color:'#dc2626' }}>Satu pelanggaran lagi</strong> akan mengakibatkan ujian dikumpulkan secara otomatis dan pelanggaran dicatat.
+            </p>
+            <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:10, padding:'10px 14px', fontSize:12, color:'#7f1d1d', marginBottom:20, textAlign:'left' }}>
+              💡 Tetap di halaman ini, jangan ganti tab atau minimasi jendela browser.
+            </div>
+            <button
+              onClick={() => setViolationModal(false)}
+              style={{ background:'linear-gradient(135deg,#dc2626,#b91c1c)', color:'#fff', border:'none',
+                borderRadius:12, padding:'12px 32px', fontSize:14, fontWeight:800, cursor:'pointer',
+                width:'100%', boxShadow:'0 4px 16px rgba(220,38,38,.4)' }}
+            >
+              Saya Mengerti — Kembali ke Ujian
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Top bar ───────────────────────────────────────────── */}
       <div style={{
