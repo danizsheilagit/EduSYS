@@ -4,7 +4,7 @@ import Sidebar     from './Sidebar'
 import Header      from './Header'
 import AIAssistant from '@/components/ai/AIAssistant'
 
-export const SidebarContext = createContext({ open: true, toggle: () => {} })
+export const SidebarContext = createContext({ open: true, toggle: () => {}, setOpen: () => {}, examMode: false, setExamMode: () => {} })
 export const useSidebar = () => useContext(SidebarContext)
 
 /** Error Boundary */
@@ -38,10 +38,11 @@ class ErrorBoundary extends Component {
 }
 
 export default function AppLayout() {
-  const [open, setOpen] = useState(true)
+  const [open,     setOpen]     = useState(true)
+  const [examMode, setExamMode] = useState(false)
 
   return (
-    <SidebarContext.Provider value={{ open, toggle: () => setOpen(v => !v) }}>
+    <SidebarContext.Provider value={{ open, toggle: () => setOpen(v => !v), setOpen, examMode, setExamMode }}>
       <div className="app-shell">
         <Sidebar />
         <div className="app-main" style={{ marginLeft: open ? 0 : 0 }}>

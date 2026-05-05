@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Clock, AlertTriangle, ChevronRight, CheckCircle2, RotateCcw, Trophy } from 'lucide-react'
+import { ArrowLeft, Clock, AlertTriangle, ChevronRight, CheckCircle2, RotateCcw, Trophy, Target } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import { useSidebar } from '@/components/layout/AppLayout'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 
@@ -11,7 +12,8 @@ const MODE_COLOR = { ujian:'var(--indigo-600)', tryout:'#0891b2', quiz:'#7c3aed'
 export default function UjianDetail() {
   const { id } = useParams()
   const { user } = useAuth()
-  const navigate  = useNavigate()
+  const navigate    = useNavigate()
+  const { setOpen: setSidebarOpen, setExamMode } = useSidebar()
   const [exam,        setExam]        = useState(null)
   const [allAttempts, setAllAttempts] = useState([])
   const [myAnswer,    setMyAnswer]    = useState(null)
@@ -65,6 +67,18 @@ export default function UjianDetail() {
 
   // Keep phaseRef in sync
   useEffect(() => { phaseRef.current = phase }, [phase])
+
+  // ── Sidebar hide/restore during active exam ────────────────────
+  useEffect(() => {
+    if (phase === 'active') {
+      setSidebarOpen(false)   // tutup sidebar
+      setExamMode(true)       // disable toggle button
+    } else {
+      setExamMode(false)      // re-enable toggle
+      // Tidak restore sidebar — biarkan user kontrol sendiri
+    }
+    return () => setExamMode(false)  // cleanup saat halaman ditinggal
+  }, [phase])
 
   // ── Focus / integrity monitoring ───────────────────────────
   useEffect(() => {
@@ -398,7 +412,31 @@ export default function UjianDetail() {
             </div>
           </div>
 
-          {/* ── Integrity rules section ────────────────────── */}
+          {/* \u2500\u2500 TryOut: simulasi ujian info \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */}
+          {mode === 'tryout' && !blockedTryout && (
+            <div style={{ margin:'0 24px 12px', background:'linear-gradient(135deg,#ecfeff,#f0f9ff)', border:'2px solid #67e8f9', borderRadius:14, padding:'16px 18px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+                <Target size={16} color="#0891b2"/>
+                <span style={{ fontSize:13, fontWeight:800, color:'#0e7490', letterSpacing:.3 }}>Try Out — Simulasi Ujian Nyata</span>
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:6, fontSize:12, color:'#164e63' }}>
+                {[
+                  '🎯 Try Out dirancang untuk mensimulasikan suasana ujian sesungguhnya',
+                  '🔀 Soal dan pilihan jawaban diacak setiap percobaan agar Anda terbiasa',
+                  '📊 Hasil setiap percobaan tersimpan — pantau perkembangan nilai Anda',
+                  `🔁 Anda memiliki ${maxAtt} percobaan total, gunakan sebaik mungkin`,
+                  '🛡️ Sistem pengawasan aktif seperti ujian asli (detail di bawah)',
+                ].map((t, i) => (
+                  <div key={i} style={{ display:'flex', gap:8, alignItems:'flex-start' }}>
+                    <span>{t}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* \u2500\u2500 Integrity rules section \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */}
+
           {isMonitored && !blockedTryout && (
             <div style={{ margin:'0 24px 20px', background:'linear-gradient(135deg,#1e1b4b,#312e81)', borderRadius:14, padding:'18px 20px', color:'#fff' }}>
               <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>

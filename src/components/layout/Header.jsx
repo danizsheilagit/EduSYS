@@ -34,7 +34,7 @@ const NOTIF_ICON = {
 export default function Header() {
   const { profile, signOut, user } = useAuth()
   const { setChatOpen }            = useAI()
-  const { open, toggle }           = useSidebar()
+  const { open, toggle, examMode }  = useSidebar()
   const { theme, toggleTheme }     = useTheme()
   const navigate                   = useNavigate()
 
@@ -161,8 +161,12 @@ export default function Header() {
   return (
     <>
       <header className="app-header">
-        {/* Sidebar toggle */}
-        <button onClick={toggle} className="btn btn-ghost btn-icon" title={open ? 'Sembunyikan sidebar' : 'Tampilkan sidebar'}>
+        {/* Sidebar toggle — disabled during exam */}
+        <button onClick={examMode ? undefined : toggle}
+          className="btn btn-ghost btn-icon"
+          title={examMode ? 'Sidebar disembunyikan selama ujian' : (open ? 'Sembunyikan sidebar' : 'Tampilkan sidebar')}
+          style={{ opacity: examMode ? 0.3 : 1, cursor: examMode ? 'not-allowed' : 'pointer' }}
+        >
           {open ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
         </button>
 
