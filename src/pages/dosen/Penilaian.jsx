@@ -42,19 +42,32 @@ function TabBar({ active, onChange }) {
 /*  TAB: TUGAS                                                 */
 /* ─────────────────────────────────────────────────────────── */
 function TugasTab({ userId }) {
-  const [assignments, setAssignments] = useState([])
-  const [expanded,    setExpanded]    = useState({})
-  const [submissions, setSubmissions] = useState({})
-  const [loadingSubs, setLoadingSubs] = useState({})
-  const [grading,     setGrading]     = useState({})
-  const [loading,     setLoading]     = useState(true)
+  const [assignments,    setAssignments]    = useState([])
+  const [courses,        setCourses]        = useState([])
+  const [selectedCourse, setSelectedCourse] = useState('')
+  const [expanded,       setExpanded]       = useState({})
+  const [submissions,    setSubmissions]    = useState({})
+  const [loadingSubs,    setLoadingSubs]    = useState({})
+  const [grading,        setGrading]        = useState({})
+  const [loading,        setLoading]        = useState(true)
 
-  useEffect(() => { fetchAssignments() }, [userId])
+  useEffect(() => { fetchCourses() }, [userId])
+  useEffect(() => { if (selectedCourse) fetchAssignments(selectedCourse) }, [selectedCourse])
 
-  async function fetchAssignments() {
+  async function fetchCourses() {
+    const { data } = await supabase.from('courses').select('id,name,code').eq('dosen_id', userId).order('name')
+    setCourses(data || [])
+    if (data?.length) setSelectedCourse(data[0].id)
+    else setLoading(false)
+  }
+
+  async function fetchAssignments(courseId) {
+    setLoading(true)
+    setExpanded({})
+    setSubmissions({})
     const { data } = await supabase.from('assignments')
-      .select('*, course:courses!inner(name, code, dosen_id)')
-      .eq('courses.dosen_id', userId)
+      .select('*, course:courses(name, code)')
+      .eq('course_id', courseId)
       .order('created_at', { ascending: false })
     setAssignments(data || [])
     setLoading(false)
@@ -107,118 +120,139 @@ function TugasTab({ userId }) {
   if (loading) return (
     <div><Sk.PageHeader/><Sk.StatCards n={3}/><Sk.Table rows={5} cols={5}/></div>
   )
-  if (!assignments.length) return (
-    <div className="empty-state card" style={{ padding:40 }}>
-      <ClipboardList size={32} color="var(--gray-200)"/>
-      <p className="empty-state-text">Belum ada tugas</p>
-    </div>
-  )
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-      {assignments.map(a => {
-        const subs   = submissions[a.id] || []
-        const graded = subs.filter(s => s.status === 'graded').length
-        return (
-          <div key={a.id} className="card">
-            <div style={{ padding:'14px 18px', display:'flex', alignItems:'center', gap:12, cursor:'pointer' }} onClick={() => toggleExpand(a.id)}>
-              <div style={{ flex:1 }}>
-                <div style={{ fontWeight:600, fontSize:13 }}>{a.title}</div>
-                <div style={{ fontSize:11, color:'var(--gray-400)', marginTop:2 }}>
-                  {a.course?.code} · {a.course?.name}
-                  {a.due_date && ` · Deadline: ${new Date(a.due_date).toLocaleDateString('id-ID')}`}
-                </div>
-              </div>
-              {expanded[a.id] && <span style={{ fontSize:12, color:'var(--gray-400)' }}>{graded}/{subs.length} dinilai</span>}
-              {expanded[a.id] ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
-            </div>
+    <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+      {/* Course selector */}
+      <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+        <select className="input" style={{ maxWidth:340 }} value={selectedCourse} onChange={e => setSelectedCourse(e.target.value)}>
+          {courses.map(c => <option key={c.id} value={c.id}>{c.code} – {c.name}</option>)}
+        </select>
+        <span style={{ fontSize:12, color:'var(--gray-400)' }}>{assignments.length} tugas</span>
+      </div>
 
-            {expanded[a.id] && (
-              <div style={{ borderTop:'1px solid var(--gray-100)' }}>
-                {loadingSubs[a.id] ? (
-                  <div style={{ padding:20, display:'flex', justifyContent:'center' }}><div className="spinner"/></div>
-                ) : subs.length === 0 ? (
-                  <div style={{ padding:'20px', textAlign:'center', fontSize:12, color:'var(--gray-400)' }}>Belum ada yang mengumpulkan</div>
-                ) : subs.map((s, i) => {
-                  const g = grading[s.id] || {}
-                  return (
-                    <div key={s.id} style={{ padding:'14px 18px', borderBottom: i < subs.length-1 ? '1px solid var(--gray-100)' : 'none', display:'flex', gap:14, alignItems:'flex-start' }}>
-                      <div className="avatar" style={{ width:34, height:34, flexShrink:0 }}>
-                        {s.student?.avatar_url ? <img src={s.student.avatar_url} alt=""/> : s.student?.full_name?.[0]||'M'}
-                      </div>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontWeight:600, fontSize:13 }}>{s.student?.full_name}</div>
-                        <div style={{ fontSize:11, color:'var(--gray-400)' }}>{s.student?.nim} · {new Date(s.submitted_at).toLocaleString('id-ID')}</div>
-                        {s.webview_link && <div style={{ marginTop:6 }}><FilePreview name={s.file_name} webViewLink={s.webview_link} compact/></div>}
-                      </div>
-                      <div style={{ flexShrink:0, display:'flex', flexDirection:'column', gap:8, minWidth:200 }}>
-                        {s.status === 'graded' && g.loading === undefined ? (
-                          <div style={{ textAlign:'right' }}>
-                            <div style={{ fontSize:18, fontWeight:800, color:'var(--indigo-600)' }}>{s.grade} <span style={{ fontSize:11, color:'var(--gray-400)', fontWeight:400 }}>/ {a.max_score}</span></div>
-                            {s.feedback && <div style={{ fontSize:11, color:'var(--gray-500)', marginTop:2 }}>{s.feedback}</div>}
-                            <button className="btn btn-ghost btn-sm" style={{ marginTop:4, fontSize:11 }}
-                              onClick={() => setGrading(p=>({...p,[s.id]:{grade:s.grade,feedback:s.feedback||''}}))}>
-                              Edit Nilai
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <div style={{ display:'flex', gap:6 }}>
-                              <input type="number" className="input" placeholder={`0–${a.max_score}`} min={0} max={a.max_score}
-                                style={{ width:80 }}
-                                value={g.grade ?? (s.status==='graded' ? s.grade : '')}
-                                onChange={e => setGrading(p=>({...p,[s.id]:{...p[s.id],grade:e.target.value}}))}/>
-                              <span style={{ fontSize:11, color:'var(--gray-400)', alignSelf:'center' }}>/ {a.max_score}</span>
-                            </div>
-                            <textarea className="input" placeholder="Feedback (opsional)" rows={2}
-                              style={{ resize:'vertical', fontSize:12 }}
-                              value={g.feedback ?? (s.status==='graded' ? s.feedback : '')}
-                              onChange={e => setGrading(p=>({...p,[s.id]:{...p[s.id],feedback:e.target.value}}))}/>
-                            <button className="btn btn-primary btn-sm" onClick={() => handleGrade(s, a)} disabled={g.loading}>
-                              {g.loading ? <Loader2 size={13} style={{ animation:'spin .7s linear infinite' }}/> : <Star size={13}/>}
-                              Simpan Nilai
-                            </button>
-                          </>
-                        )}
-                      </div>
+      {assignments.length === 0 ? (
+        <div className="empty-state card" style={{ padding:40 }}>
+          <ClipboardList size={32} color="var(--gray-200)"/>
+          <p className="empty-state-text">Belum ada tugas di mata kuliah ini</p>
+        </div>
+      ) : (
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          {assignments.map(a => {
+            const subs   = submissions[a.id] || []
+            const graded = subs.filter(s => s.status === 'graded').length
+            return (
+              <div key={a.id} className="card">
+                <div style={{ padding:'14px 18px', display:'flex', alignItems:'center', gap:12, cursor:'pointer' }} onClick={() => toggleExpand(a.id)}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontWeight:600, fontSize:13 }}>{a.title}</div>
+                    <div style={{ fontSize:11, color:'var(--gray-400)', marginTop:2 }}>
+                      {a.due_date && `Deadline: ${new Date(a.due_date).toLocaleDateString('id-ID')}`}
                     </div>
-                  )
-                })}
+                  </div>
+                  {expanded[a.id] && <span style={{ fontSize:12, color:'var(--gray-400)' }}>{graded}/{subs.length} dinilai</span>}
+                  {expanded[a.id] ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
+                </div>
+
+                {expanded[a.id] && (
+                  <div style={{ borderTop:'1px solid var(--gray-100)' }}>
+                    {loadingSubs[a.id] ? (
+                      <div style={{ padding:20, display:'flex', justifyContent:'center' }}><div className="spinner"/></div>
+                    ) : subs.length === 0 ? (
+                      <div style={{ padding:'20px', textAlign:'center', fontSize:12, color:'var(--gray-400)' }}>Belum ada yang mengumpulkan</div>
+                    ) : subs.map((s, i) => {
+                      const g = grading[s.id] || {}
+                      return (
+                        <div key={s.id} style={{ padding:'14px 18px', borderBottom: i < subs.length-1 ? '1px solid var(--gray-100)' : 'none', display:'flex', gap:14, alignItems:'flex-start' }}>
+                          <div className="avatar" style={{ width:34, height:34, flexShrink:0 }}>
+                            {s.student?.avatar_url ? <img src={s.student.avatar_url} alt=""/> : s.student?.full_name?.[0]||'M'}
+                          </div>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontWeight:600, fontSize:13 }}>{s.student?.full_name}</div>
+                            <div style={{ fontSize:11, color:'var(--gray-400)' }}>{s.student?.nim} · {new Date(s.submitted_at).toLocaleString('id-ID')}</div>
+                            {s.webview_link && <div style={{ marginTop:6 }}><FilePreview name={s.file_name} webViewLink={s.webview_link} compact/></div>}
+                          </div>
+                          <div style={{ flexShrink:0, display:'flex', flexDirection:'column', gap:8, minWidth:200 }}>
+                            {s.status === 'graded' && g.loading === undefined ? (
+                              <div style={{ textAlign:'right' }}>
+                                <div style={{ fontSize:18, fontWeight:800, color:'var(--indigo-600)' }}>{s.grade} <span style={{ fontSize:11, color:'var(--gray-400)', fontWeight:400 }}>/ {a.max_score}</span></div>
+                                {s.feedback && <div style={{ fontSize:11, color:'var(--gray-500)', marginTop:2 }}>{s.feedback}</div>}
+                                <button className="btn btn-ghost btn-sm" style={{ marginTop:4, fontSize:11 }}
+                                  onClick={() => setGrading(p=>({...p,[s.id]:{grade:s.grade,feedback:s.feedback||''}}))}>Edit Nilai</button>
+                              </div>
+                            ) : (
+                              <>
+                                <div style={{ display:'flex', gap:6 }}>
+                                  <input type="number" className="input" placeholder={`0–${a.max_score}`} min={0} max={a.max_score}
+                                    style={{ width:80 }}
+                                    value={g.grade ?? (s.status==='graded' ? s.grade : '')}
+                                    onChange={e => setGrading(p=>({...p,[s.id]:{...p[s.id],grade:e.target.value}}))}/>
+                                  <span style={{ fontSize:11, color:'var(--gray-400)', alignSelf:'center' }}>/ {a.max_score}</span>
+                                </div>
+                                <textarea className="input" placeholder="Feedback (opsional)" rows={2}
+                                  style={{ resize:'vertical', fontSize:12 }}
+                                  value={g.feedback ?? (s.status==='graded' ? s.feedback : '')}
+                                  onChange={e => setGrading(p=>({...p,[s.id]:{...p[s.id],feedback:e.target.value}}))}/>
+                                <button className="btn btn-primary btn-sm" onClick={() => handleGrade(s, a)} disabled={g.loading}>
+                                  {g.loading ? <Loader2 size={13} style={{ animation:'spin .7s linear infinite' }}/> : <Star size={13}/>}
+                                  Simpan Nilai
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        )
-      })}
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
+
+
 
 /* ─────────────────────────────────────────────────────────── */
 /*  TAB: UJIAN                                                 */
 /* ─────────────────────────────────────────────────────────── */
 function UjianTab({ userId }) {
-  const [exams,       setExams]       = useState([])
-  const [expanded,    setExpanded]    = useState({})
-  const [answers,     setAnswers]     = useState({})   // { examId: [rows] }
-  const [loadingAns,  setLoadingAns]  = useState({})
-  const [loading,     setLoading]     = useState(true)
-  const MAX_VIOL_WARN = 3   // sama dengan MAX_VIOLATIONS di UjianDetail
+  const [exams,          setExams]          = useState([])
+  const [courses,        setCourses]        = useState([])
+  const [selectedCourse, setSelectedCourse] = useState('')
+  const [expanded,       setExpanded]       = useState({})
+  const [answers,        setAnswers]        = useState({})
+  const [loadingAns,     setLoadingAns]     = useState({})
+  const [loading,        setLoading]        = useState(true)
+  const MAX_VIOL_WARN = 3
 
-  useEffect(() => { fetchExams() }, [userId])
+  useEffect(() => { fetchCourses() }, [userId])
+  useEffect(() => { if (selectedCourse) fetchExams(selectedCourse) }, [selectedCourse])
 
-  async function fetchExams() {
-    // fetch exams from courses owned by this dosen
-    const { data: courses } = await supabase.from('courses').select('id').eq('dosen_id', userId)
-    const courseIds = (courses || []).map(c => c.id)
-    if (!courseIds.length) { setLoading(false); return }
+  async function fetchCourses() {
+    const { data } = await supabase.from('courses').select('id,name,code').eq('dosen_id', userId).order('name')
+    setCourses(data || [])
+    if (data?.length) setSelectedCourse(data[0].id)
+    else setLoading(false)
+  }
 
+  async function fetchExams(courseId) {
+    setLoading(true)
+    setExpanded({})
+    setAnswers({})
     const { data } = await supabase.from('exams')
       .select('*, course:courses(name, code)')
-      .in('course_id', courseIds)
+      .eq('course_id', courseId)
       .order('start_at', { ascending: false })
     setExams(data || [])
     setLoading(false)
   }
+
+
+
 
   async function loadAnswers(examId) {
     if (answers[examId]) return
@@ -244,15 +278,24 @@ function UjianTab({ userId }) {
   if (loading) return (
     <div><Sk.PageHeader/><Sk.Table rows={5} cols={4}/></div>
   )
-  if (!exams.length) return (
-    <div className="empty-state card" style={{ padding:40 }}>
-      <FileText size={32} color="var(--gray-200)"/>
-      <p className="empty-state-text">Belum ada ujian</p>
-    </div>
-  )
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+    <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+      {/* Course selector */}
+      <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+        <select className="input" style={{ maxWidth:340 }} value={selectedCourse} onChange={e => setSelectedCourse(e.target.value)}>
+          {courses.map(c => <option key={c.id} value={c.id}>{c.code} – {c.name}</option>)}
+        </select>
+        <span style={{ fontSize:12, color:'var(--gray-400)' }}>{exams.length} ujian/kuis</span>
+      </div>
+
+      {exams.length === 0 ? (
+        <div className="empty-state card" style={{ padding:40 }}>
+          <FileText size={32} color="var(--gray-200)"/>
+          <p className="empty-state-text">Belum ada ujian di mata kuliah ini</p>
+        </div>
+      ) : (
+      <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
       {exams.map(exam => {
         const mode     = exam.exam_mode || 'ujian'
         const rows     = answers[exam.id] || []
@@ -389,9 +432,12 @@ function UjianTab({ userId }) {
           </div>
         )
       })}
+      </div>
+      )}
     </div>
   )
 }
+
 
 /* ─────────────────────────────────────────────────────────── */
 /*  TAB: REKAP NILAI (matriks + bobot nilai akhir)            */
