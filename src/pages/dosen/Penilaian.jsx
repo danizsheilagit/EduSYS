@@ -202,6 +202,7 @@ function UjianTab({ userId }) {
   const [answers,     setAnswers]     = useState({})   // { examId: [rows] }
   const [loadingAns,  setLoadingAns]  = useState({})
   const [loading,     setLoading]     = useState(true)
+  const MAX_VIOL_WARN = 3   // sama dengan MAX_VIOLATIONS di UjianDetail
 
   useEffect(() => { fetchExams() }, [userId])
 
@@ -233,6 +234,11 @@ function UjianTab({ userId }) {
 
   function toggleExpand(id) {
     setExpanded(p => { const next = { ...p, [id]: !p[id] }; if (next[id]) loadAnswers(id); return next })
+  }
+
+  // Read _violations from answers JSONB
+  function getViolations(attempt) {
+    return attempt?.answers?._violations ?? 0
   }
 
   if (loading) return (
@@ -294,13 +300,35 @@ function UjianTab({ userId }) {
                 ) : studentList.map(({ student, attempts }, i) => {
                   const best = attempts.reduce((b, a) => (a.score ?? -1) > (b.score ?? -1) ? a : b, attempts[0])
                   const isMultiAttempt = mode === 'tryout' || mode === 'quiz'
+                  // Aggregate max violations across all attempts
+                  const maxViol = attempts.reduce((max, a) => Math.max(max, getViolations(a)), 0)
+                  const violColor = maxViol >= MAX_VIOL_WARN ? '#dc2626' : maxViol >= 1 ? '#f97316' : null
                   return (
-                    <div key={student?.nim || i} style={{ padding:'14px 18px', borderBottom: i < studentList.length-1 ? '1px solid var(--gray-100)' : 'none', display:'flex', gap:14, alignItems:'flex-start' }}>
+                    <div key={student?.nim || i} style={{ padding:'14px 18px', borderBottom: i < studentList.length-1 ? '1px solid var(--gray-100)' : 'none', display:'flex', gap:14, alignItems:'flex-start',
+                      background: maxViol >= MAX_VIOL_WARN ? '#fff5f5' : maxViol >= 1 ? '#fffbf5' : 'transparent'
+                    }}>
                       <div className="avatar" style={{ width:34, height:34, flexShrink:0 }}>
                         {student?.avatar_url ? <img src={student.avatar_url} alt=""/> : student?.full_name?.[0]||'M'}
                       </div>
                       <div style={{ flex:1 }}>
-                        <div style={{ fontWeight:600, fontSize:13 }}>{student?.full_name}</div>
+                        <div style={{ fontWeight:600, fontSize:13, display:'flex', alignItems:'center', gap:8 }}>
+                          {student?.full_name}
+                          {maxViol > 0 && (
+                            <span title={`${maxViol} pelanggaran terdeteksi selama ujian`}
+                              style={{
+                                display:'inline-flex', alignItems:'center', gap:4,
+                                fontSize:10, fontWeight:800,
+                                background: violColor + '20',
+                                color: violColor,
+                                border: `1px solid ${violColor}40`,
+                                padding:'2px 8px', borderRadius:20,
+                                cursor:'help',
+                              }}
+                            >
+                              {maxViol >= MAX_VIOL_WARN ? '🚨' : '⚠️'} {maxViol}× pelanggaran
+                            </span>
+                          )}
+                        </div>
                         <div style={{ fontSize:11, color:'var(--gray-400)', marginBottom: isMultiAttempt ? 8 : 0 }}>
                           {student?.nim}
                           {isMultiAttempt && ` · ${attempts.length}× percobaan`}
@@ -308,15 +336,27 @@ function UjianTab({ userId }) {
                         {/* Attempt history for tryout/quiz */}
                         {isMultiAttempt && (
                           <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
-                            {attempts.map((att, ai) => (
-                              <div key={ai} style={{ padding:'4px 10px', borderRadius:8, background: att.id===best.id ? '#d1fae5' : 'var(--gray-100)', border: att.id===best.id ? '1px solid #6ee7b7' : '1px solid var(--gray-200)', fontSize:12 }}>
-                                <span style={{ color:'var(--gray-500)', marginRight:4 }}>#{att.attempt_number}</span>
-                                <span style={{ fontWeight:700, color: att.id===best.id ? '#065f46' : 'var(--gray-700)' }}>
-                                  {att.score ?? '–'}
-                                </span>
-                                {att.id===best.id && <span style={{ fontSize:10, color:'#065f46', marginLeft:4 }}>✓ terbaik</span>}
-                              </div>
-                            ))}
+                            {attempts.map((att, ai) => {
+                              const av = getViolations(att)
+                              return (
+                                <div key={ai} style={{ padding:'4px 10px', borderRadius:8,
+                                  background: att.id===best.id ? '#d1fae5' : 'var(--gray-100)',
+                                  border: att.id===best.id ? '1px solid #6ee7b7' : '1px solid var(--gray-200)',
+                                  fontSize:12, display:'flex', alignItems:'center', gap:6 }}
+                                >
+                                  <span style={{ color:'var(--gray-500)', marginRight:2 }}>#{att.attempt_number}</span>
+                                  <span style={{ fontWeight:700, color: att.id===best.id ? '#065f46' : 'var(--gray-700)' }}>
+                                    {att.score ?? '–'}
+                                  </span>
+                                  {att.id===best.id && <span style={{ fontSize:10, color:'#065f46' }}>✓ terbaik</span>}
+                                  {av > 0 && (
+                                    <span title={`${av} pelanggaran pada percobaan ini`}
+                                      style={{ fontSize:10, color: av >= MAX_VIOL_WARN ? '#dc2626' : '#f97316', fontWeight:700 }}
+                                    >{av >= MAX_VIOL_WARN ? '🚨' : '⚠️'}{av}</span>
+                                  )}
+                                </div>
+                              )
+                            })}
                           </div>
                         )}
                       </div>
@@ -336,6 +376,14 @@ function UjianTab({ userId }) {
                     </div>
                   )
                 })}
+                {/* Violation legend */}
+                {answers[exam.id]?.some(a => getViolations(a) > 0) && (
+                  <div style={{ padding:'10px 18px', background:'#fff7ed', borderTop:'1px solid #fed7aa', fontSize:11, color:'#92400e', display:'flex', gap:16 }}>
+                    <span>⚠️ 1× = berpindah fokus</span>
+                    <span>🚨 {MAX_VIOL_WARN}× = auto-submit karena pelanggaran</span>
+                    <span style={{ marginLeft:'auto', color:'var(--gray-400)' }}>Hover badge untuk detail</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
