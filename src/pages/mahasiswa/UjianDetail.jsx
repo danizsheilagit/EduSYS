@@ -362,97 +362,215 @@ export default function UjianDetail() {
     return 'unanswered'
   }
 
-  return (
-    <div style={{ display:'flex', flexDirection:'column', height:'calc(100vh - 56px)', overflow:'hidden' }}>
+  // Mode-specific theme
+  const modeTheme = {
+    ujian:   { grad:'linear-gradient(135deg,#4f46e5,#7c3aed)', light:'#eef2ff', accent:'#4f46e5', emoji:'📝' },
+    tryout:  { grad:'linear-gradient(135deg,#0891b2,#0e7490)', light:'#ecfeff', accent:'#0891b2', emoji:'🎯' },
+    quiz:    { grad:'linear-gradient(135deg,#7c3aed,#a855f7)', light:'#faf5ff', accent:'#7c3aed', emoji:'⚡' },
+  }
+  const theme = modeTheme[mode] || modeTheme.ujian
+  const isLowTime = timeLeft !== null && timeLeft < 300
+  const pct = questions.length > 0 ? Math.round(answeredCount / questions.length * 100) : 0
 
-      {/* Top bar */}
-      <div style={{ flexShrink:0, background:'#fff', borderBottom:'1px solid var(--gray-200)', padding:'10px 20px', display:'flex', alignItems:'center', justifyContent:'space-between', zIndex:10, boxShadow:'0 1px 4px rgba(0,0,0,.06)' }}>
-        <div>
-          <div style={{ fontWeight:700, fontSize:14 }}>
-            {exam.title}
-            {mode !== 'ujian' && <span style={{ fontSize:11, fontWeight:500, color: MODE_COLOR[mode], marginLeft:8 }}>· Percobaan ke-{attemptNum}</span>}
+  return (
+    <div style={{ display:'flex', flexDirection:'column', height:'calc(100vh - 56px)', overflow:'hidden', background:'#f8fafc' }}>
+
+      {/* ── Top bar ───────────────────────────────────────────── */}
+      <div style={{
+        flexShrink:0, background: theme.grad,
+        padding:'0 20px', display:'flex', alignItems:'center',
+        justifyContent:'space-between', zIndex:10,
+        boxShadow:'0 4px 20px rgba(0,0,0,.18)', minHeight:58,
+      }}>
+        {/* Left: title + progress */}
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <span style={{ fontSize:12, fontWeight:800, background:'rgba(255,255,255,.2)', color:'#fff', padding:'2px 10px', borderRadius:20, letterSpacing:.5 }}>
+              {theme.emoji} {MODE_LABEL[mode]}
+              {mode !== 'ujian' && ` · #${attemptNum}`}
+            </span>
+            <span style={{ fontSize:14, fontWeight:700, color:'#fff', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{exam.title}</span>
           </div>
-          <div style={{ fontSize:11, marginTop:2, display:'flex', gap:12 }}>
-            <span style={{ color:'#16a34a', fontWeight:700 }}>&#10003; {answeredCount} dijawab</span>
-            {flaggedCount > 0 && <span style={{ color:'#f97316', fontWeight:700 }}>&#128681; {flaggedCount} ragu-ragu</span>}
-            <span style={{ color:'#dc2626', fontWeight:700 }}>&#10007; {questions.length - answeredCount - flaggedCount} belum</span>
+          {/* Progress bar */}
+          <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:6 }}>
+            <div style={{ flex:1, maxWidth:220, height:5, background:'rgba(255,255,255,.25)', borderRadius:99, overflow:'hidden' }}>
+              <div style={{ height:'100%', width:`${pct}%`, background:'#fff', borderRadius:99, transition:'width .4s' }}/>
+            </div>
+            <span style={{ fontSize:11, color:'rgba(255,255,255,.9)', fontWeight:600, flexShrink:0 }}>
+              {answeredCount}/{questions.length} dijawab
+            </span>
+            {flaggedCount > 0 && (
+              <span style={{ fontSize:11, color:'#fde68a', fontWeight:700, flexShrink:0 }}>🚩 {flaggedCount}</span>
+            )}
           </div>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:14 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:20, fontWeight:800, fontVariantNumeric:'tabular-nums', color: timeLeft !== null && timeLeft < 300 ? '#dc2626' : 'var(--gray-800)' }}>
-            <Clock size={16}/> {formatTime(timeLeft)}
+
+        {/* Timer + Submit */}
+        <div style={{ display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
+          <div style={{
+            display:'flex', alignItems:'center', gap:8,
+            background: isLowTime ? '#dc2626' : 'rgba(255,255,255,.18)',
+            border: `2px solid ${isLowTime ? '#fca5a5' : 'rgba(255,255,255,.3)'}`,
+            borderRadius:14, padding:'7px 14px',
+            animation: isLowTime ? 'timer-pulse 1s infinite' : 'none',
+            transition:'all .3s',
+          }}>
+            <Clock size={15} color={isLowTime ? '#fecaca' : '#fff'}/>
+            <span style={{ fontSize:18, fontWeight:900, fontVariantNumeric:'tabular-nums', color:'#fff', letterSpacing:1 }}>
+              {formatTime(timeLeft)}
+            </span>
           </div>
-          <button className="btn btn-primary btn-sm" onClick={() => handleSubmit(false)}>Kumpulkan</button>
+          <button
+            onClick={() => handleSubmit(false)}
+            style={{ background:'#fff', color: theme.accent, border:'none', borderRadius:12,
+              padding:'9px 20px', fontSize:13, fontWeight:800, cursor:'pointer',
+              boxShadow:'0 2px 12px rgba(0,0,0,.15)', transition:'transform .12s, box-shadow .12s' }}
+            onMouseEnter={e => { e.currentTarget.style.transform='scale(1.04)'; e.currentTarget.style.boxShadow='0 4px 20px rgba(0,0,0,.2)' }}
+            onMouseLeave={e => { e.currentTarget.style.transform='scale(1)'; e.currentTarget.style.boxShadow='0 2px 12px rgba(0,0,0,.15)' }}
+          >
+            Kumpulkan ✓
+          </button>
         </div>
       </div>
 
-      {/* Body: sidebar + question */}
+      {/* ── Body: sidebar + question ──────────────────────────── */}
       <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
 
         {/* Left sidebar */}
-        <div style={{ width:190, flexShrink:0, background:'#f8fafc', borderRight:'1px solid var(--gray-200)', display:'flex', flexDirection:'column', overflowY:'auto' }}>
-          <div style={{ padding:'12px 12px 6px', fontSize:10, fontWeight:800, color:'var(--gray-400)', textTransform:'uppercase', letterSpacing:'.6px' }}>Navigasi Soal</div>
-          <div style={{ padding:'4px 10px 10px', display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:5 }}>
+        <div style={{ width:200, flexShrink:0, background:'#1e1b4b', display:'flex', flexDirection:'column', overflowY:'auto' }}>
+          {/* Sidebar header */}
+          <div style={{ padding:'14px 14px 10px' }}>
+            <div style={{ fontSize:10, fontWeight:800, color:'rgba(255,255,255,.45)', textTransform:'uppercase', letterSpacing:'.8px', marginBottom:8 }}>Navigasi Soal</div>
+            {/* Mini stats */}
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:4, marginBottom:12 }}>
+              {[
+                { label:'Dijawab', val:answeredCount, color:'#4ade80' },
+                { label:'Ragu', val:flaggedCount, color:'#fb923c' },
+                { label:'Belum', val:questions.length - answeredCount - flaggedCount, color:'#f87171' },
+              ].map(s => (
+                <div key={s.label} style={{ textAlign:'center', background:'rgba(255,255,255,.07)', borderRadius:8, padding:'6px 4px' }}>
+                  <div style={{ fontSize:16, fontWeight:900, color:s.color }}>{s.val}</div>
+                  <div style={{ fontSize:9, color:'rgba(255,255,255,.4)', fontWeight:600 }}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+            {/* Progress bar */}
+            <div style={{ height:4, background:'rgba(255,255,255,.1)', borderRadius:99, overflow:'hidden' }}>
+              <div style={{ height:'100%', width:`${pct}%`, background: theme.grad, borderRadius:99, transition:'width .4s' }}/>
+            </div>
+          </div>
+
+          {/* Grid buttons */}
+          <div style={{ padding:'0 10px 10px', display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:5 }}>
             {questions.map((question, i) => {
-              const st = STATUS_STYLE[qStatus(question)]
+              const st = qStatus(question)
               const isActive = i === currentQ
+              const bgMap = { answered:'#16a34a', flagged:'#f97316', unanswered:'rgba(255,255,255,.08)' }
+              const colorMap = { answered:'#fff', flagged:'#fff', unanswered:'rgba(255,255,255,.45)' }
+              const borderMap = { answered:'#16a34a', flagged:'#f97316', unanswered:'rgba(255,255,255,.15)' }
               return (
-                <button key={question.id} onClick={() => setCurrentQ(i)} title={`Soal ${i+1}`}
-                  style={{ width:'100%', aspectRatio:'1', borderRadius:8, border:`2px solid ${isActive ? '#4f46e5' : st.border}`, background: isActive ? '#4f46e5' : st.bg, color: isActive ? '#fff' : st.color, fontSize:12, fontWeight:800, cursor:'pointer', transition:'all .12s', boxShadow: isActive ? '0 0 0 3px #c7d2fe' : 'none', padding:0 }}>
-                  {i+1}
-                </button>
+                <button key={question.id} className="exam-q-nav-btn"
+                  onClick={() => setCurrentQ(i)} title={`Soal ${i+1}`}
+                  style={{
+                    background: isActive ? '#fff' : bgMap[st],
+                    color: isActive ? theme.accent : colorMap[st],
+                    borderColor: isActive ? '#fff' : borderMap[st],
+                    boxShadow: isActive ? `0 0 0 3px ${theme.accent}60` : 'none',
+                  }}
+                >{i+1}</button>
               )
             })}
           </div>
 
           {/* Legend */}
-          <div style={{ padding:'12px 12px', marginTop:'auto', borderTop:'1px solid var(--gray-200)' }}>
+          <div style={{ padding:'12px 14px', marginTop:'auto', borderTop:'1px solid rgba(255,255,255,.08)' }}>
             {[
-              { bg:'#16a34a', border:'#16a34a', label:'Dijawab' },
-              { bg:'#f97316', border:'#f97316', label:'Ragu-ragu' },
-              { bg:'#fff',    border:'#fca5a5', label:'Belum', color:'#dc2626' },
+              { color:'#4ade80', label:'Dijawab' },
+              { color:'#fb923c', label:'Ragu-ragu' },
+              { color:'rgba(255,255,255,.3)', label:'Belum' },
             ].map(l => (
-              <div key={l.label} style={{ display:'flex', alignItems:'center', gap:7, marginBottom:6 }}>
-                <div style={{ width:13, height:13, borderRadius:3, background:l.bg, border:`2px solid ${l.border}`, flexShrink:0 }}/>
-                <span style={{ fontSize:11, color: l.color || 'var(--gray-600)', fontWeight:600 }}>{l.label}</span>
+              <div key={l.label} style={{ display:'flex', alignItems:'center', gap:7, marginBottom:5 }}>
+                <div style={{ width:10, height:10, borderRadius:3, background:l.color, flexShrink:0 }}/>
+                <span style={{ fontSize:11, color:'rgba(255,255,255,.55)', fontWeight:600 }}>{l.label}</span>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Main question area */}
-        <div style={{ flex:1, overflowY:'auto', padding:'28px 32px' }}>
+        {/* ── Main question area ─────────────────────────────── */}
+        <div style={{ flex:1, overflowY:'auto', padding:'32px 36px' }}>
           {q ? (
-            <div style={{ maxWidth:660, margin:'0 auto' }}>
+            <div style={{ maxWidth:680, margin:'0 auto' }}>
 
-              {/* Meta row */}
-              <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:18 }}>
-                <div style={{ width:38, height:38, borderRadius:'50%', background:'#4f46e5', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, fontWeight:800, flexShrink:0 }}>{currentQ+1}</div>
-                <span style={{ fontSize:12, color:'var(--gray-400)', flex:1 }}>Soal {currentQ+1} dari {questions.length}</span>
+              {/* Question header */}
+              <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20 }}>
+                {/* Big number badge */}
+                <div style={{
+                  width:48, height:48, borderRadius:14, background: theme.grad,
+                  color:'#fff', display:'flex', alignItems:'center', justifyContent:'center',
+                  fontSize:18, fontWeight:900, flexShrink:0,
+                  boxShadow:`0 4px 12px ${theme.accent}40`,
+                }}>{currentQ+1}</div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:11, color:'var(--gray-400)', fontWeight:700, textTransform:'uppercase', letterSpacing:.5 }}>
+                    Soal {currentQ+1} dari {questions.length}
+                    {q.difficulty && (
+                      <span style={{ marginLeft:8, color: q.difficulty==='mudah'?'#16a34a':q.difficulty==='sulit'?'#dc2626':'#ca8a04',
+                        background: q.difficulty==='mudah'?'#dcfce7':q.difficulty==='sulit'?'#fee2e2':'#fef9c3',
+                        padding:'1px 8px', borderRadius:20, fontSize:10 }}>
+                        {q.difficulty}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ height:3, marginTop:5, background:'var(--gray-100)', borderRadius:99, overflow:'hidden' }}>
+                    <div style={{ height:'100%', width:`${((currentQ+1)/questions.length)*100}%`, background: theme.grad, borderRadius:99, transition:'width .3s' }}/>
+                  </div>
+                </div>
                 <button onClick={() => toggleFlag(q.id)}
-                  style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 16px', borderRadius:8, border:`2px solid ${isFlagged ? '#f97316' : 'var(--gray-200)'}`, background: isFlagged ? '#fff7ed' : '#fff', color: isFlagged ? '#f97316' : 'var(--gray-400)', fontSize:12, fontWeight:700, cursor:'pointer', transition:'all .15s' }}>
-                  &#128681; {isFlagged ? 'Ragu-ragu' : 'Tandai Ragu-ragu'}
+                  style={{
+                    display:'flex', alignItems:'center', gap:6, padding:'8px 14px', borderRadius:10,
+                    border:`2px solid ${isFlagged ? '#f97316' : 'var(--gray-200)'}`,
+                    background: isFlagged ? '#fff7ed' : '#fff',
+                    color: isFlagged ? '#f97316' : 'var(--gray-400)',
+                    fontSize:12, fontWeight:700, cursor:'pointer', transition:'all .15s',
+                    boxShadow: isFlagged ? '0 2px 8px rgba(249,115,22,.2)' : 'none',
+                  }}>
+                  🚩 {isFlagged ? 'Ditandai' : 'Ragu-ragu'}
                 </button>
               </div>
 
-              {/* Question card */}
-              <div className="card" style={{ padding:'20px 24px', marginBottom:20, fontSize:14, color:'var(--gray-900)', lineHeight:1.85, fontWeight:500 }}>
+              {/* Question text card */}
+              <div style={{
+                background:'#fff', borderRadius:16, padding:'22px 26px', marginBottom:22,
+                border:'1px solid var(--gray-200)',
+                borderLeft:`4px solid ${theme.accent}`,
+                boxShadow:'0 2px 16px rgba(0,0,0,.06)',
+                fontSize:14.5, color:'var(--gray-900)', lineHeight:1.9, fontWeight:500,
+              }}>
                 {q.text}
               </div>
 
               {/* Options */}
               {q.type === 'multiple_choice' && (
-                <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:28 }}>
+                <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:32 }}>
                   {q.options?.map((opt, oi) => {
                     const letter = String.fromCharCode(65 + oi)
                     const selected = answers[q.id] === letter
+                    const optColors = ['#6366f1','#0891b2','#7c3aed','#059669','#dc2626']
+                    const optColor  = optColors[oi] || '#6366f1'
                     return (
-                      <label key={letter} style={{ display:'flex', alignItems:'center', gap:14, padding:'13px 18px', border:`2px solid ${selected ? '#4f46e5' : 'var(--gray-200)'}`, background: selected ? '#eef2ff' : '#fff', borderRadius:12, cursor:'pointer', fontSize:13, transition:'all .12s', boxShadow: selected ? '0 0 0 3px #c7d2fe40' : 'none' }}>
+                      <label key={letter}
+                        className={`exam-option${selected ? ' selected' : ''}`}
+                        style={{ animationDelay:`${oi * 0.04}s` }}
+                      >
                         <input type="radio" name={q.id} value={letter} checked={selected}
                           onChange={() => setAnswers(prev => ({ ...prev, [q.id]: letter }))}
                           style={{ display:'none' }}/>
-                        <div style={{ width:30, height:30, borderRadius:'50%', border:`2px solid ${selected ? '#4f46e5' : 'var(--gray-300)'}`, background: selected ? '#4f46e5' : '#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:800, color: selected ? '#fff' : 'var(--gray-500)', flexShrink:0 }}>{letter}</div>
-                        <span style={{ color: selected ? '#3730a3' : 'var(--gray-700)', fontWeight: selected ? 600 : 400 }}>{opt}</span>
+                        <div className="opt-letter"
+                          style={selected ? {} : { borderColor: optColor+'40', color: optColor, background: optColor+'0d' }}
+                        >{letter}</div>
+                        <span style={{ color: selected ? '#3730a3' : 'var(--gray-700)', fontWeight: selected ? 700 : 400, flex:1 }}>{opt}</span>
+                        {selected && <span style={{ fontSize:16, flexShrink:0 }}>✓</span>}
                       </label>
                     )
                   })}
@@ -462,18 +580,40 @@ export default function UjianDetail() {
                 <textarea className="input" placeholder="Tulis jawaban Anda..." rows={6}
                   value={answers[q.id] || ''}
                   onChange={e => setAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
-                  style={{ resize:'vertical', fontFamily:'inherit', fontSize:13, marginBottom:28 }}/>
+                  style={{ resize:'vertical', fontFamily:'inherit', fontSize:13, marginBottom:32, borderRadius:12 }}/>
               )}
 
-              {/* Prev / Next */}
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                <button className="btn btn-secondary btn-sm" onClick={() => setCurrentQ(i => Math.max(0, i-1))} disabled={currentQ === 0}>
-                  &larr; Sebelumnya
+              {/* Navigation */}
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}>
+                <button
+                  onClick={() => setCurrentQ(i => Math.max(0, i-1))} disabled={currentQ === 0}
+                  style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 20px', borderRadius:12,
+                    border:'2px solid var(--gray-200)', background:'#fff', color:'var(--gray-600)',
+                    fontSize:13, fontWeight:700, cursor: currentQ===0 ? 'not-allowed' : 'pointer',
+                    opacity: currentQ===0 ? .4 : 1, transition:'all .15s' }}
+                >
+                  ← Sebelumnya
                 </button>
                 <span style={{ fontSize:12, color:'var(--gray-400)', fontWeight:600 }}>{currentQ+1} / {questions.length}</span>
                 {currentQ < questions.length - 1
-                  ? <button className="btn btn-primary btn-sm" onClick={() => setCurrentQ(i => i+1)}>Selanjutnya &rarr;</button>
-                  : <button className="btn btn-primary" onClick={() => handleSubmit(false)}>Kumpulkan &#10003;</button>
+                  ? <button
+                      onClick={() => setCurrentQ(i => i+1)}
+                      style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 20px', borderRadius:12,
+                        border:'none', background: theme.grad, color:'#fff',
+                        fontSize:13, fontWeight:800, cursor:'pointer',
+                        boxShadow:`0 4px 12px ${theme.accent}40`, transition:'all .15s' }}
+                    >
+                      Selanjutnya →
+                    </button>
+                  : <button
+                      onClick={() => handleSubmit(false)}
+                      style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 24px', borderRadius:12,
+                        border:'none', background:'linear-gradient(135deg,#16a34a,#059669)', color:'#fff',
+                        fontSize:13, fontWeight:800, cursor:'pointer',
+                        boxShadow:'0 4px 12px rgba(22,163,74,.4)' }}
+                    >
+                      Kumpulkan ✓
+                    </button>
                 }
               </div>
 
