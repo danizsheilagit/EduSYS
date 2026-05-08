@@ -161,9 +161,6 @@ export async function printPresensi({ supabase, courseId, userId }) {
     const rows = students.map((st, idx) => {
       const att    = attMap[st.id]
       const status = att?.status || null
-      const jam    = att?.checked_in_at
-        ? new Date(att.checked_in_at).toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' })
-        : '—'
       const stLabel = status ? `<span style="color:${STATUS_COLOR[status]};font-weight:bold">${status.toUpperCase()}</span>` : '<span style="color:#999">—</span>'
       return `
         <tr>
@@ -171,13 +168,21 @@ export async function printPresensi({ supabase, courseId, userId }) {
           <td class="center">${st.nim || '—'}</td>
           <td>${st.full_name}</td>
           <td class="center">${stLabel}</td>
-          <td style="width:90px">&nbsp;</td>
         </tr>`
     }).join('')
 
-    const isLast = si === sessions.length - 1
     return `
-      <div style="margin-top: ${si === 0 ? '0' : '36px'}; ${isLast ? '' : 'padding-bottom:24px; border-bottom: 2px dashed #ccc;'}">
+      <div class="page${si < sessions.length - 1 ? ' page-break' : ''}">
+        <div class="header">
+          <div class="header-inner">
+            <img class="header-logo" src="https://i.ibb.co.com/kgV7WDhF/Logo-SYS.png" alt="STIKOM"/>
+            <div class="header-text">
+              <div class="inst">STIKOM Yos Sudarso Purwokerto</div>
+              <div style="font-size:13pt;font-weight:bold;text-transform:uppercase;letter-spacing:1px">Lampiran: Daftar Hadir per Pertemuan</div>
+              <div class="sub">${course.code} — ${course.name} | ${course.semester}</div>
+            </div>
+          </div>
+        </div>
         <div class="section-title">
           Daftar Hadir — Pertemuan ${sess.meeting_number}: ${sess.title}
         </div>
@@ -192,7 +197,6 @@ export async function printPresensi({ supabase, courseId, userId }) {
               <th style="width:110px">NIM</th>
               <th>Nama Mahasiswa</th>
               <th style="width:70px">Status</th>
-              <th style="width:90px">Tanda Tangan</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
@@ -343,13 +347,8 @@ export async function printPresensi({ supabase, courseId, userId }) {
 </div>
 
 <!-- ════════════════ LAMPIRAN: DAFTAR HADIR PER PERTEMUAN ══════════ -->
-<div class="page">
-  <div class="header">
-    <div class="title">Lampiran: Daftar Hadir per Pertemuan</div>
-    <div class="sub">${course.code} — ${course.name} | ${course.semester}</div>
-  </div>
-  ${daftarHadirPages}
-</div>
+${daftarHadirPages}
+
 
 <script>window.onload = () => { setTimeout(() => window.print(), 400) }</script>
 </body>
