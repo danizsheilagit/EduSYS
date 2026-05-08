@@ -1,8 +1,17 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Trophy, Star, Zap, TrendingUp, BookOpen } from 'lucide-react'
+import { Trophy, Star, Zap, TrendingUp, BookOpen, X, ChevronRight, BookMarked, ClipboardList, MessageSquare, FileText } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
+
+/* ── source config ──────────────────────────────────────── */
+const SOURCE_CFG = {
+  materi:  { label:'Materi',  icon:'📖', color:'#0891b2', bg:'#e0f2fe' },
+  tugas:   { label:'Tugas',   icon:'📤', color:'#059669', bg:'#d1fae5' },
+  forum:   { label:'Forum',   icon:'💬', color:'#7c3aed', bg:'#ede9fe' },
+  ujian:   { label:'Ujian',   icon:'📝', color:'#dc2626', bg:'#fee2e2' },
+  bonus:   { label:'Bonus',   icon:'⭐', color:'#d97706', bg:'#fef3c7' },
+}
 
 /* ── helpers ─────────────────────────────────────────────── */
 const MEDAL = ['👑','🥇','🥈','🥉']
@@ -34,7 +43,24 @@ export default function Leaderboard() {
   const [data,       setData]       = useState([])
   const [loading,    setLoading]    = useState(false)
   const [animated,   setAnimated]   = useState(false)
+  const [detail,     setDetail]     = useState(null)   // { student, logs }
+  const [detailLoad, setDetailLoad] = useState(false)
   const animRef = useRef(null)
+
+  async function openDetail(student) {
+    if (role !== 'dosen') return
+    setDetail({ student, logs: [] })
+    setDetailLoad(true)
+    const { data: logs } = await supabase
+      .from('points_log')
+      .select('*')
+      .eq('user_id', student.user_id)
+      .eq('course_id', courseId)
+      .eq('semester_id', semester?.id)
+      .order('created_at', { ascending: false })
+    setDetail({ student, logs: logs || [] })
+    setDetailLoad(false)
+  }
 
   // Fetch courses (berbeda antara dosen & mahasiswa)
   useEffect(() => {
@@ -88,6 +114,14 @@ export default function Leaderboard() {
   const top10 = data.slice(0, 10)
   const me    = data.find(d => d.user_id === user?.id)
   const maxPts = top10[0]?.total_points || 1
+
+  /* ── group logs by source ─────────────────────────── */
+  const grouped = detail?.logs.reduce((acc, l) => {
+    const s = l.source || 'bonus'
+    if (!acc[s]) acc[s] = []
+    acc[s].push(l)
+    return acc
+  }, {}) || {}
 
   return (
     <div style={{ minHeight:'100vh' }}>
@@ -262,8 +296,10 @@ export default function Leaderboard() {
                     borderBottom: i < data.length-1 ? '1px solid var(--gray-100)' : 'none',
                     background: isMe ? '#f5f3ff' : 'transparent',
                     transition:'background .15s',
+                    cursor: role==='dosen' ? 'pointer' : 'default',
                   }}
-                    onMouseEnter={e=>{ if(!isMe) e.currentTarget.style.background='var(--gray-50)' }}
+                    onClick={() => openDetail(d)}
+                    onMouseEnter={e=>{ if(!isMe) e.currentTarget.style.background= role==='dosen'?'#f0f9ff':'var(--gray-50)' }}
                     onMouseLeave={e=>{ e.currentTarget.style.background = isMe?'#f5f3ff':'transparent' }}
                   >
                     {/* Rank */}
@@ -290,12 +326,15 @@ export default function Leaderboard() {
                     </div>
 
                     {/* Points breakdown */}
-                    <div style={{ textAlign:'right', flexShrink:0 }}>
-                      <div style={{ fontWeight:800, fontSize:16, color: isMe?'var(--indigo-700)':'var(--gray-800)' }}>{d.total_points}</div>
-                      <div style={{ fontSize:10, color:'var(--gray-400)' }}>poin</div>
-                      <div style={{ fontSize:9, color:'var(--gray-300)', marginTop:2 }}>
-                        📖{d.materi_pts} 📤{d.tugas_pts} 💬{d.forum_pts} 📝{d.ujian_pts}
+                    <div style={{ textAlign:'right', flexShrink:0, display:'flex', alignItems:'center', gap:8 }}>
+                      <div>
+                        <div style={{ fontWeight:800, fontSize:16, color: isMe?'var(--indigo-700)':'var(--gray-800)' }}>{d.total_points}</div>
+                        <div style={{ fontSize:10, color:'var(--gray-400)' }}>poin</div>
+                        <div style={{ fontSize:9, color:'var(--gray-300)', marginTop:2 }}>
+                          📖{d.materi_pts} 📤{d.tugas_pts} 💬{d.forum_pts} 📝{d.ujian_pts}
+                        </div>
                       </div>
+                      {role==='dosen' && <ChevronRight size={14} color="var(--gray-300)"/>}
                     </div>
                   </div>
                 )
@@ -305,11 +344,119 @@ export default function Leaderboard() {
         </>
       )}
 
+      {/* ── Point Detail Modal (Dosen only) ─────────────── */}
+      {detail && (
+        <div onClick={() => setDetail(null)}
+          style={{ position:'fixed', inset:0, zIndex:9000, background:'rgba(0,0,0,.5)',
+            backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{ background:'#fff', borderRadius:20, width:'100%', maxWidth:520,
+              maxHeight:'85vh', display:'flex', flexDirection:'column',
+              boxShadow:'0 24px 60px rgba(0,0,0,.35)', animation:'detailIn .22s ease' }}>
+
+            {/* Header */}
+            <div style={{ padding:'20px 24px 16px', borderBottom:'1px solid var(--gray-100)',
+              display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
+              <div style={{ width:44, height:44, borderRadius:'50%', overflow:'hidden',
+                background:'var(--indigo-100)', display:'flex', alignItems:'center',
+                justifyContent:'center', fontSize:16, fontWeight:800, color:'var(--indigo-700)', flexShrink:0 }}>
+                {detail.student.avatar_url
+                  ? <img src={detail.student.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover' }} alt=""/>
+                  : detail.student.full_name?.[0]}
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontWeight:800, fontSize:15 }}>{detail.student.full_name}</div>
+                <div style={{ fontSize:12, color:'var(--gray-400)' }}>{detail.student.nim} · #{detail.student.rank} · {detail.student.total_points} poin total</div>
+              </div>
+              <button onClick={()=>setDetail(null)}
+                style={{ width:32, height:32, borderRadius:'50%', border:'none',
+                  background:'var(--gray-100)', cursor:'pointer', display:'flex',
+                  alignItems:'center', justifyContent:'center' }}>
+                <X size={15}/>
+              </button>
+            </div>
+
+            {/* Summary badges */}
+            <div style={{ padding:'14px 24px', borderBottom:'1px solid var(--gray-100)',
+              display:'flex', gap:8, flexWrap:'wrap', flexShrink:0 }}>
+              {Object.entries(SOURCE_CFG).map(([src, cfg]) => {
+                const pts = detail.student[`${src}_pts`] || 0
+                if (!pts) return null
+                return (
+                  <div key={src} style={{ display:'flex', alignItems:'center', gap:5,
+                    padding:'5px 12px', borderRadius:99, background:cfg.bg,
+                    fontSize:12, fontWeight:700, color:cfg.color }}>
+                    {cfg.icon} {cfg.label}: {pts} pts
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Log entries */}
+            <div style={{ overflowY:'auto', flex:1 }}>
+              {detailLoad ? (
+                <div style={{ padding:40, display:'flex', justifyContent:'center' }}><div className="spinner"/></div>
+              ) : detail.logs.length === 0 ? (
+                <div style={{ padding:40, textAlign:'center', fontSize:13, color:'var(--gray-400)' }}>Belum ada catatan poin</div>
+              ) : (
+                Object.entries(grouped).map(([src, logs]) => {
+                  const cfg = SOURCE_CFG[src] || SOURCE_CFG.bonus
+                  const total = logs.reduce((s,l)=>s+l.points, 0)
+                  return (
+                    <div key={src}>
+                      <div style={{ padding:'10px 24px 6px', background:'var(--gray-50)',
+                        fontSize:11, fontWeight:800, color:cfg.color,
+                        display:'flex', justifyContent:'space-between',
+                        borderBottom:'1px solid var(--gray-100)', position:'sticky', top:0 }}>
+                        <span>{cfg.icon} {cfg.label.toUpperCase()}</span>
+                        <span>{total} pts ({logs.length}×)</span>
+                      </div>
+                      {logs.map((log, li) => (
+                        <div key={log.id} style={{ padding:'10px 24px',
+                          borderBottom: li<logs.length-1?'1px solid var(--gray-50)':'none',
+                          display:'flex', alignItems:'center', gap:10 }}>
+                          <div style={{ width:28, height:28, borderRadius:8, background:cfg.bg,
+                            display:'flex', alignItems:'center', justifyContent:'center',
+                            fontSize:14, flexShrink:0 }}>{cfg.icon}</div>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontSize:12, color:'var(--gray-700)', overflow:'hidden',
+                              textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                              {log.reason || '-'}
+                            </div>
+                            <div style={{ fontSize:10, color:'var(--gray-400)', marginTop:2 }}>
+                              {new Date(log.created_at).toLocaleString('id-ID',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}
+                            </div>
+                          </div>
+                          <div style={{ fontWeight:800, fontSize:14, color:cfg.color, flexShrink:0 }}>+{log.points}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })
+              )}
+            </div>
+
+            <div style={{ padding:'14px 24px', borderTop:'1px solid var(--gray-100)', flexShrink:0,
+              display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <span style={{ fontSize:12, color:'var(--gray-400)' }}>{detail.logs.length} aktivitas tercatat</span>
+              <button onClick={()=>setDetail(null)}
+                style={{ padding:'8px 20px', borderRadius:10, border:'none',
+                  background:'var(--gray-100)', color:'var(--gray-600)',
+                  cursor:'pointer', fontSize:13, fontWeight:600 }}>Tutup</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* CSS */}
       <style>{`
         @keyframes bounce {
           0%,100% { transform: translateY(0); }
           50%      { transform: translateY(-6px); }
+        }
+        @keyframes detailIn {
+          from { opacity:0; transform:scale(.95) translateY(10px); }
+          to   { opacity:1; transform:scale(1) translateY(0); }
         }
       `}</style>
     </div>
