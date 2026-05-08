@@ -123,10 +123,27 @@ export default function DosenMataKuliah() {
       variant: 'danger',
     })
     if (!ok) return
-    const { error } = await supabase.from('courses').delete().eq('id', id)
-    if (error) toast.error('Gagal menghapus')
-    else { toast.success('Mata kuliah dihapus'); fetchCourses() }
+
+    const { error, count } = await supabase
+      .from('courses')
+      .delete({ count: 'exact' })
+      .eq('id', id)
+
+    if (error) {
+      console.error('[EduSYS] handleDelete error:', error)
+      toast.error('Gagal menghapus: ' + error.message)
+    } else if (count === 0) {
+      // RLS memblokir delete secara diam-diam
+      console.warn('[EduSYS] handleDelete: 0 rows deleted — kemungkinan diblokir RLS')
+      toast.error('Tidak dapat menghapus. Pastikan kebijakan database mengizinkan operasi ini.')
+    } else {
+      // Optimistic: hapus dari state dulu, lalu re-fetch
+      setCourses(prev => prev.filter(c => c.id !== id))
+      toast.success('Mata kuliah dihapus')
+      fetchCourses()
+    }
   }
+
 
   // ── Copy helpers ────────────────────────────────────────────
   function openCopy(c) {
