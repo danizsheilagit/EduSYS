@@ -13,7 +13,7 @@ function buildSystemPrompt(role, pageName = '') {
   return base
 }
 
-function parseInlineMarkdown(text) {
+export function parseInlineMarkdown(text) {
   if (!text) return ''
   const tokens = text.split(/(\*\*.*?\*\*|`.*?`)/g)
   return tokens.map((token, idx) => {
@@ -39,7 +39,7 @@ function parseInlineMarkdown(text) {
   })
 }
 
-function formatMessageText(text) {
+export function formatMessageText(text) {
   if (!text) return ''
   
   // Split by code blocks first
