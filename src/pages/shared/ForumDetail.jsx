@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Send, Loader2, MessageSquare, Coins } from 'lucide-react'
+import { ArrowLeft, Send, Loader2, MessageSquare, Coins, Sparkles } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import { useAI } from '@/contexts/AIContext'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 
 export default function ForumDetail() {
   const { id } = useParams()
   const { user, profile } = useAuth()
+  const { askWithContext } = useAI()
   const navigate = useNavigate()
   const [forum,   setForum]   = useState(null)
   const [replies, setReplies] = useState([])
@@ -78,14 +80,37 @@ export default function ForumDetail() {
             {forum.is_pinned && <span style={{ marginLeft:8, color:'var(--indigo-600)', fontWeight:600 }}>📌 Pinned</span>}
           </div>
           <h1 style={{ fontSize:18, fontWeight:800, marginBottom:12 }}>{forum.title}</h1>
-          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14 }}>
-            <div className="avatar" style={{ width:32, height:32 }}>
-              {forum.author?.avatar_url ? <img src={forum.author.avatar_url} alt=""/> : forum.author?.full_name?.[0]||'U'}
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <div className="avatar" style={{ width:32, height:32 }}>
+                {forum.author?.avatar_url ? <img src={forum.author.avatar_url} alt=""/> : forum.author?.full_name?.[0]||'U'}
+              </div>
+              <div>
+                <div style={{ fontSize:12, fontWeight:600 }}>{forum.author?.full_name}</div>
+                <div style={{ fontSize:11, color:'var(--gray-400)' }}>{new Date(forum.created_at).toLocaleString('id-ID')}</div>
+              </div>
             </div>
-            <div>
-              <div style={{ fontSize:12, fontWeight:600 }}>{forum.author?.full_name}</div>
-              <div style={{ fontSize:11, color:'var(--gray-400)' }}>{new Date(forum.created_at).toLocaleString('id-ID')}</div>
-            </div>
+            <button
+              style={{
+                color: 'var(--indigo-600)',
+                background: 'var(--indigo-50)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 3,
+                padding: '4px 10px',
+                fontSize: 11,
+                fontWeight: 600,
+                border: 'none',
+                borderRadius: 12,
+                cursor: 'pointer',
+                transition: 'all 0.15s'
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--indigo-100)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--indigo-50)' }}
+              onClick={() => askWithContext(`Tolong jelaskan atau analisis topik diskusi forum berikut:\n\nJudul: "${forum.title}"\nIsi: "${forum.body || ''}"\nDibuat oleh: ${forum.author?.full_name || 'Pengguna'}\n\nBerikan rangkuman dan poin diskusi yang menarik dari topik ini.`)}
+            >
+              <Sparkles size={11} /> Tanya AI
+            </button>
           </div>
           {forum.body && <p style={{ fontSize:13, color:'var(--gray-700)', lineHeight:1.7 }}>{forum.body}</p>}
         </div>

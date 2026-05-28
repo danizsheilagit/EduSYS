@@ -14,7 +14,7 @@ function buildSystemPrompt(role, pageName = '') {
 }
 
 export default function AIAssistant() {
-  const { hasKey, chatOpen, setChatOpen, askGemini } = useAI()
+  const { hasKey, chatOpen, setChatOpen, askGemini, initialPrompt, setInitialPrompt } = useAI()
   const { role } = useAuth()
 
   const [messages, setMessages] = useState([
@@ -25,6 +25,29 @@ export default function AIAssistant() {
   const [keyModal, setKeyModal] = useState(false)
   const bottomRef = useRef(null)
   const inputRef  = useRef(null)
+
+  useEffect(() => {
+    if (chatOpen && initialPrompt) {
+      const text = initialPrompt
+      setInitialPrompt('') // Clear immediately to prevent loop
+      setMessages(m => [...m, { role: 'user', text }])
+      setLoading(true)
+
+      askGemini(text, buildSystemPrompt(role))
+        .then(reply => {
+          setMessages(m => [...m, { role: 'bot', text: reply }])
+        })
+        .catch(err => {
+          const errText = err.message === 'NO_KEY'
+            ? '⚠️ API Key belum diatur. Klik tombol kunci untuk menambahkan key Gemini Anda.'
+            : `❌ Error: ${err.message}`
+          setMessages(m => [...m, { role: 'bot', text: errText }])
+        })
+        .finally(() => {
+          setLoading(false)
+        })
+    }
+  }, [chatOpen, initialPrompt, askGemini, role, setInitialPrompt])
 
   useEffect(() => {
     if (chatOpen) {

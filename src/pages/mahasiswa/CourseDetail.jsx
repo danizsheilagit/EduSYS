@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, BookOpen, ClipboardList, MessageSquare, FileText, ExternalLink, Calendar, User, Star, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, BookOpen, ClipboardList, MessageSquare, FileText, ExternalLink, Calendar, User, Star, CheckCircle2, Sparkles } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import { useAI } from '@/contexts/AIContext'
 import { supabase } from '@/lib/supabase'
 import FilePreview from '@/components/drive/FilePreview'
 import toast from 'react-hot-toast'
@@ -356,6 +357,7 @@ function AttachItem({ attach, matId, idx, userId, isCompleted, onMarkDone, onUpd
 /* ── Materi Tab ──────────────────────────────────────────────── */
 const STORAGE_VER = 'v2_countdown'
 function MateriTab({ courseId, userId }) {
+  const { askWithContext } = useAI()
   const [items,         setItems]         = useState([])
   const [completedRefs, setCompletedRefs] = useState(new Set()) // 'mat_{id}_{idx}'
   const [loading,       setLoading]       = useState(true)
@@ -460,13 +462,39 @@ function MateriTab({ courseId, userId }) {
                   {/* Card header */}
                   <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:12, marginBottom:12 }}>
                     <div>
-                      <div style={{ fontWeight:800, fontSize:14, color:'var(--gray-900)', display:'flex', alignItems:'center', gap:8 }}>
+                      <div style={{ fontWeight:800, fontSize:14, color:'var(--gray-900)', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
                         {m.title}
                         {ptsEarned > 0 && (
                           <span style={{ fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:99, background:'#fef9c3', color:'#92400e', border:'1px solid #fde68a', display:'flex', alignItems:'center', gap:3, whiteSpace:'nowrap' }}>
                             <Star size={9} color="#f59e0b" fill="#f59e0b"/> +{ptsEarned} pts
                           </span>
                         )}
+                        <button
+                          style={{
+                            color: 'var(--indigo-600)',
+                            background: 'var(--indigo-50)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3,
+                            padding: '2px 8px',
+                            fontSize: 10,
+                            fontWeight: 600,
+                            border: 'none',
+                            borderRadius: 12,
+                            cursor: 'pointer',
+                            marginLeft: 4,
+                            height: 'auto',
+                            transition: 'all 0.15s'
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--indigo-100)' }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--indigo-50)' }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            askWithContext(`Tolong jelaskan materi kuliah "${m.title}"${m.description ? ` yang membahas tentang: ${m.description}` : ''}. Berikan ringkasan poin-poin pentingnya secara terstruktur.`)
+                          }}
+                        >
+                          <Sparkles size={10} /> Tanya AI
+                        </button>
                       </div>
                       {m.description && <div style={{ fontSize:12, color:'var(--gray-500)', marginTop:3 }}>{m.description}</div>}
                     </div>

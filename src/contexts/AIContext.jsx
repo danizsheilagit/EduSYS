@@ -40,6 +40,12 @@ export function AIProvider({ children }) {
     () => localStorage.getItem(AI_MODEL_STORAGE) || 'gemini-1.5-flash'
   )
   const [chatOpen, setChatOpen] = useState(false)
+  const [initialPrompt, setInitialPrompt] = useState('')
+
+  const askWithContext = useCallback((prompt) => {
+    setInitialPrompt(prompt)
+    setChatOpen(true)
+  }, [])
 
   useEffect(() => {
     if (!apiKey) return
@@ -109,7 +115,7 @@ export function AIProvider({ children }) {
   }, [apiKey, detectedModel])
 
   return (
-    <AIContext.Provider value={{ apiKey, hasKey, saveApiKey, clearApiKey, askGemini, chatOpen, setChatOpen }}>
+    <AIContext.Provider value={{ apiKey, hasKey, saveApiKey, clearApiKey, askGemini, chatOpen, setChatOpen, initialPrompt, setInitialPrompt, askWithContext }}>
       {children}
     </AIContext.Provider>
   )
