@@ -27,15 +27,27 @@ export default function AvatarPreview({ config, items, size = 64, fallback, clas
     return LAYER_ORDER
       .map(layer => {
         const itemId = config[SLOT_KEY[layer]]
-        if (!itemId) return null
+        if (!itemId) {
+          // Jika tidak ada item di slot ini, tapi layer ini adalah 'face' (Non-Animated)
+          // dan pengguna tidak memiliki equipped_face maupun equipped_hair,
+          // kita tampilkan custom avatar (fallback.avatar_url) sebagai layer face
+          if (layer === 'face' && !config.equipped_face && !config.equipped_hair && fallback?.avatar_url) {
+            return { layer, url: fallback.avatar_url }
+          }
+          return null
+        }
         const item = items instanceof Map ? items.get(itemId) : items[itemId]
         if (!item) return null
         return { layer, url: item.image_url }
       })
       .filter(Boolean)
-  }, [config, items])
+  }, [config, items, fallback])
 
-  const hasAvatar = layers.length > 0
+  const hasEquippedItems = useMemo(() => {
+    if (!config) return false
+    return LAYER_ORDER.some(layer => !!config[SLOT_KEY[layer]])
+  }, [config])
+
   const skinColor = config?.skin_color || '#FFDBB4'
   const initials  = fallback?.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?'
 
@@ -53,13 +65,13 @@ export default function AvatarPreview({ config, items, size = 64, fallback, clas
         ...extraStyle,
       }}
     >
-      {hasAvatar ? (
+      {hasEquippedItems ? (
         <>
-          {/* Skin base circle */}
+          {/* Skin base background */}
           <div style={{
             position: 'absolute', inset: 0,
             background: skinColor,
-            borderRadius: '50%',
+            borderRadius: extraStyle?.borderRadius || '50%',
           }} />
           {/* Layers */}
           {layers.map(({ layer, url }) => (

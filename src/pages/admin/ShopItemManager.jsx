@@ -10,14 +10,15 @@ import { supabase } from '@/lib/supabase'
 import toast        from 'react-hot-toast'
 
 const CATEGORY_LABELS = {
-  hair: '💇 Rambut', hat: '🎩 Topi', shirt: '👕 Baju',
-  accessory: '🕶️ Aksesoris', background: '🖼️ Background', face: '😊 Wajah',
+  face: '👤 Non-Animated Avatar',
+  hair: '✨ Animated Avatar',
+  background: '🖼️ Background',
 }
 const RARITY_OPTIONS = ['common', 'rare', 'epic', 'legendary']
 const RARITY_COLORS  = { common: '#64748B', rare: '#3B82F6', epic: '#7C3AED', legendary: '#F59E0B' }
 
 const EMPTY_FORM = {
-  name: '', description: '', category: 'hair', price: 10,
+  name: '', description: '', category: 'face', price: 10,
   image_url: '/assets/avatar/', rarity: 'common', is_active: true, sort_order: 0,
 }
 
@@ -49,9 +50,9 @@ export default function ShopItemManager() {
   async function handleFileUpload(file) {
     if (!file) return
     // Validate SVG or image
-    const allowedTypes = ['image/svg+xml', 'image/png', 'image/jpeg', 'image/webp']
+    const allowedTypes = ['image/svg+xml', 'image/png', 'image/jpeg', 'image/webp', 'image/gif']
     if (!allowedTypes.includes(file.type)) {
-      toast.error('Hanya file SVG, PNG, JPG, atau WebP yang diperbolehkan')
+      toast.error('Hanya file SVG, PNG, JPG, WebP, atau GIF yang diperbolehkan')
       return
     }
     if (file.size > 2 * 1024 * 1024) {
@@ -316,13 +317,13 @@ export default function ShopItemManager() {
                         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--indigo-600)' }}>Upload gambar</span>
                         <span style={{ fontSize: 12, color: 'var(--gray-400)' }}> atau drag & drop</span>
                       </div>
-                      <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>SVG, PNG, JPG, WebP (maks 2MB)</span>
+                      <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>SVG, PNG, JPG, WebP, GIF (maks 2MB)</span>
                     </div>
                   )}
                   <input
                     ref={fileRef}
                     type="file"
-                    accept=".svg,image/svg+xml,image/png,image/jpeg,image/webp"
+                    accept=".svg,image/svg+xml,image/png,image/jpeg,image/webp,image/gif"
                     style={{ display: 'none' }}
                     onChange={onFileSelect}
                   />

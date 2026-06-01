@@ -1,7 +1,7 @@
 /**
  * AvatarEditor — Edit & equip avatar items dari inventory.
  */
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Save, ArrowLeft, Palette, RotateCcw, Check, Loader2, ShoppingBag, Sparkles
@@ -12,12 +12,9 @@ import AvatarPreview from '@/components/AvatarPreview'
 import toast         from 'react-hot-toast'
 
 const CATEGORIES = [
-  { key: 'background', label: 'Background', icon: '🖼️', slot: 'equipped_background' },
-  { key: 'face',       label: 'Wajah',      icon: '😊', slot: 'equipped_face'       },
-  { key: 'hair',       label: 'Rambut',      icon: '💇', slot: 'equipped_hair'       },
-  { key: 'hat',        label: 'Topi',        icon: '🎩', slot: 'equipped_hat'        },
-  { key: 'shirt',      label: 'Baju',        icon: '👕', slot: 'equipped_shirt'      },
-  { key: 'accessory',  label: 'Aksesoris',   icon: '🕶️', slot: 'equipped_accessory'  },
+  { key: 'background', label: 'Background',          icon: '🖼️', slot: 'equipped_background' },
+  { key: 'face',       label: 'Non-Animated Avatar', icon: '👤', slot: 'equipped_face'       },
+  { key: 'hair',       label: 'Animated Avatar',     icon: '✨', slot: 'equipped_hair'       },
 ]
 
 const SKIN_COLORS = [
@@ -34,7 +31,7 @@ const RARITY_BORDER = {
 }
 
 export default function AvatarEditor() {
-  const { user }  = useAuth()
+  const { user, profile, refreshProfile }  = useAuth()
   const navigate   = useNavigate()
 
   const [items,     setItems]     = useState([])      // all shop items
@@ -43,6 +40,81 @@ export default function AvatarEditor() {
   const [tab,       setTab]       = useState('face')
   const [loading,   setLoading]   = useState(true)
   const [saving,    setSaving]    = useState(false)
+  const fileInputRef = useRef()
+  const [uploadingCustom, setUploadingCustom] = useState(false)
+
+  async function handleCustomUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Determine expected type based on active tab
+    const isGifExpected = tab === 'hair' // animated
+    if (isGifExpected && file.type !== 'image/gif') {
+      toast.error('Kategori Animated Avatar hanya menerima file GIF')
+      return
+    }
+    if (!isGifExpected && file.type === 'image/gif') {
+      toast.error('Gunakan kategori Animated Avatar untuk mengunggah file GIF')
+      return
+    }
+
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('Hanya file PNG, JPG, WebP, atau GIF yang diperbolehkan')
+      return
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      toast.error('Ukuran file maksimal 3MB')
+      return
+    }
+
+    setUploadingCustom(true)
+    try {
+      const ext = file.name.split('.').pop().toLowerCase()
+      const path = `avatars/${user.id}_custom_${Date.now()}.${ext}`
+
+      const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
+      if (upErr) throw upErr
+
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
+
+      // Update profiles avatar_url
+      const { error: saveErr } = await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id)
+      if (saveErr) throw saveErr
+
+      // Reset equipped slots in client config state
+      setConfig(prev => ({
+        ...prev,
+        equipped_face: null,
+        equipped_hair: null,
+        equipped_hat: null,
+        equipped_shirt: null,
+        equipped_accessory: null,
+      }))
+
+      // Save user_avatar_config to DB to clear slots
+      const payload = {
+        user_id:             user.id,
+        equipped_hair:       null,
+        equipped_hat:        null,
+        equipped_shirt:      null,
+        equipped_accessory:  null,
+        equipped_background: config.equipped_background  || null,
+        equipped_face:       null,
+        skin_color:          config.skin_color            || '#FFDBB4',
+        updated_at:          new Date().toISOString(),
+      }
+      await supabase.from('user_avatar_config').upsert(payload, { onConflict: 'user_id' })
+
+      toast.success('✨ Custom Avatar berhasil diunggah!')
+      if (refreshProfile) refreshProfile()
+    } catch (err) {
+      toast.error('Gagal mengupload avatar: ' + err.message)
+    } finally {
+      setUploadingCustom(false)
+      e.target.value = ''
+    }
+  }
 
   useEffect(() => { if (user) fetchAll() }, [user])
 
@@ -80,7 +152,15 @@ export default function AvatarEditor() {
   function equipItem(item) {
     const cat = CATEGORIES.find(c => c.key === item.category)
     if (!cat) return
-    setConfig(prev => ({ ...prev, [cat.slot]: item.id }))
+    setConfig(prev => {
+      const next = { ...prev, [cat.slot]: item.id }
+      if (item.category === 'face') {
+        next.equipped_hair = null
+      } else if (item.category === 'hair') {
+        next.equipped_face = null
+      }
+      return next
+    })
   }
 
   function unequipSlot(slot) {
@@ -100,9 +180,9 @@ export default function AvatarEditor() {
     const payload = {
       user_id:             user.id,
       equipped_hair:       config.equipped_hair       || null,
-      equipped_hat:        config.equipped_hat         || null,
-      equipped_shirt:      config.equipped_shirt       || null,
-      equipped_accessory:  config.equipped_accessory   || null,
+      equipped_hat:        null,
+      equipped_shirt:      null,
+      equipped_accessory:  null,
       equipped_background: config.equipped_background  || null,
       equipped_face:       config.equipped_face        || null,
       skin_color:          config.skin_color            || '#FFDBB4',
@@ -144,24 +224,24 @@ export default function AvatarEditor() {
       </div>
 
       {/* Main Grid: Preview + Items */}
-      <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '512px 1fr', gap: 24 }}>
 
         {/* ── Left: Preview ───────────────────────────── */}
         <div>
           <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
             {/* Big avatar */}
             <div style={{
-              width: 200, height: 200,
-              borderRadius: '50%',
+              width: 512, height: 512,
+              borderRadius: '24px',
               border: '4px solid var(--indigo-200)',
               boxShadow: '0 8px 32px rgba(99,102,241,.2)',
               overflow: 'hidden',
               background: config?.skin_color || '#FFDBB4',
               position: 'relative',
             }}>
-              <AvatarPreview config={config} items={itemMap} size={200}
-                fallback={{ name: user?.user_metadata?.full_name, avatar_url: user?.user_metadata?.avatar_url }}
-                style={{ borderRadius: '50%' }} />
+              <AvatarPreview config={config} items={itemMap} size={512}
+                fallback={{ name: profile?.full_name, avatar_url: profile?.avatar_url }}
+                style={{ borderRadius: '20px' }} />
             </div>
 
             {/* Skin Color */}
@@ -268,6 +348,35 @@ export default function AvatarEditor() {
                 {!equippedItemId && <Check size={14} color="var(--indigo-600)" />}
               </button>
 
+              {/* Upload custom option */}
+              {(tab === 'face' || tab === 'hair') && (
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingCustom}
+                  style={{
+                    height: 140, borderRadius: 14,
+                    border: '2px dashed var(--indigo-300)',
+                    background: '#fff',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    cursor: 'pointer', transition: 'all .15s',
+                    fontSize: 11, fontWeight: 600, color: 'var(--indigo-600)',
+                    position: 'relative',
+                  }}
+                >
+                  {uploadingCustom ? (
+                    <Loader2 size={24} style={{ animation: 'spin .7s linear infinite' }} color="var(--indigo-500)" />
+                  ) : (
+                    <>
+                      <span style={{ fontSize: 24 }}>📤</span>
+                      <span>Upload Custom</span>
+                      <span style={{ fontSize: 9, color: 'var(--gray-400)', fontWeight: 500 }}>
+                        {tab === 'face' ? 'PNG/JPG/WebP' : 'GIF'}
+                      </span>
+                    </>
+                  )}
+                </button>
+              )}
+
               {ownedInTab.map(item => {
                 const isEquipped = equippedItemId === item.id
                 const rarityBorder = RARITY_BORDER[item.rarity] || RARITY_BORDER.common
@@ -311,10 +420,19 @@ export default function AvatarEditor() {
         </div>
       </div>
 
+      {/* Invisible file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={tab === 'face' ? 'image/png,image/jpeg,image/webp' : 'image/gif'}
+        style={{ display: 'none' }}
+        onChange={handleCustomUpload}
+      />
+
       {/* Responsive override */}
       <style>{`
         @media (max-width: 768px) {
-          div[style*="gridTemplateColumns: 340px"] {
+          div[style*="gridTemplateColumns: 512px"] {
             grid-template-columns: 1fr !important;
           }
         }

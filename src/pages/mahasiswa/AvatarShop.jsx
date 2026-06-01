@@ -15,13 +15,10 @@ import toast         from 'react-hot-toast'
 
 /* ── Category config ──────────────────────────────────── */
 const CATEGORIES = [
-  { key: 'all',        label: 'Semua',     icon: '🛍️' },
-  { key: 'hair',       label: 'Rambut',    icon: '💇' },
-  { key: 'hat',        label: 'Topi',      icon: '🎩' },
-  { key: 'shirt',      label: 'Baju',      icon: '👕' },
-  { key: 'accessory',  label: 'Aksesoris', icon: '🕶️' },
-  { key: 'background', label: 'Background',icon: '🖼️' },
-  { key: 'face',       label: 'Wajah',     icon: '😊' },
+  { key: 'all',        label: 'Semua',               icon: '🛍️' },
+  { key: 'background', label: 'Background',          icon: '🖼️' },
+  { key: 'face',       label: 'Non-Animated Avatar', icon: '👤' },
+  { key: 'hair',       label: 'Animated Avatar',     icon: '✨' },
 ]
 
 const RARITY_CFG = {
