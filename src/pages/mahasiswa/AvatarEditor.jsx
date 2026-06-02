@@ -63,8 +63,8 @@ export default function AvatarEditor() {
       toast.error('Hanya file PNG, JPG, WebP, atau GIF yang diperbolehkan')
       return
     }
-    if (file.size > 3 * 1024 * 1024) {
-      toast.error('Ukuran file maksimal 3MB')
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Ukuran file maksimal 10MB')
       return
     }
 

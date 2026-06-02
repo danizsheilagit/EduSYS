@@ -55,8 +55,8 @@ export default function ShopItemManager() {
       toast.error('Hanya file SVG, PNG, JPG, WebP, atau GIF yang diperbolehkan')
       return
     }
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('Ukuran file maksimal 2MB')
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Ukuran file maksimal 10MB')
       return
     }
 
@@ -317,7 +317,7 @@ export default function ShopItemManager() {
                         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--indigo-600)' }}>Upload gambar</span>
                         <span style={{ fontSize: 12, color: 'var(--gray-400)' }}> atau drag & drop</span>
                       </div>
-                      <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>SVG, PNG, JPG, WebP, GIF (maks 2MB)</span>
+                      <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>SVG, PNG, JPG, WebP, GIF (maks 10MB)</span>
                     </div>
                   )}
                   <input
