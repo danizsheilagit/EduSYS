@@ -87,8 +87,17 @@ export function AuthProvider({ children }) {
 
         setUser(session?.user ?? null)
         if (session?.user) {
-          setProfileReady(false)  // Reset: sedang load profile baru
-          fetchProfile(session.user.id, session.user) // background, no await
+          // Hanya fetch profile jika ID user berubah atau profile belum ada
+          // Hal ini mencegah kedipan (unmount/remount) saat TOKEN_REFRESHED di trigger oleh window focus
+          setProfile(currProfile => {
+            if (currProfile && currProfile.id === session.user.id) {
+              return currProfile
+            }
+            // User baru atau profile kosong -> load profile
+            setProfileReady(false)
+            fetchProfile(session.user.id, session.user)
+            return null
+          })
         } else {
           setProfile(null)
           setProfileReady(true)
