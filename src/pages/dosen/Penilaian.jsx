@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   BarChart2, CheckCircle2, Clock, ChevronDown, ChevronUp,
   Loader2, Star, FileText, ClipboardList, BookOpen, Download, Table2
@@ -810,8 +811,16 @@ function RekapTab({ userId }) {
 
 
 export default function Penilaian() {
-  const { user }      = useAuth()
-  const [tab, setTab] = useState('tugas')
+  const { user } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
+  
+  const tab = searchParams.get('tab') || 'tugas'
+  const setTab = (newTab) => {
+    setSearchParams(prev => {
+      prev.set('tab', newTab)
+      return prev
+    })
+  }
 
   return (
     <div>
@@ -822,9 +831,15 @@ export default function Penilaian() {
 
       <TabBar active={tab} onChange={setTab} />
 
-      {tab === 'tugas' && <TugasTab userId={user?.id} />}
-      {tab === 'ujian' && <UjianTab userId={user?.id} />}
-      {tab === 'rekap' && <RekapTab userId={user?.id} />}
+      <div style={{ display: tab === 'tugas' ? 'block' : 'none' }}>
+        <TugasTab userId={user?.id} />
+      </div>
+      <div style={{ display: tab === 'ujian' ? 'block' : 'none' }}>
+        <UjianTab userId={user?.id} />
+      </div>
+      <div style={{ display: tab === 'rekap' ? 'block' : 'none' }}>
+        <RekapTab userId={user?.id} />
+      </div>
     </div>
   )
 }

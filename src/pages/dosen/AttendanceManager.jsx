@@ -36,8 +36,15 @@ function toDatetimeLocal(isoStr) {
 
 export default function AttendanceManager() {
   const { user } = useAuth()
-  const [searchParams] = useSearchParams()
-  const [tab,     setTab]     = useState('sesi') // sesi | manual | analitik
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = searchParams.get('tab') || 'sesi'
+  const setTab = (newTab) => {
+    setSearchParams(prev => {
+      prev.set('tab', newTab)
+      return prev
+    })
+  }
+
   const [courses,  setCourses]  = useState([])
   const [courseId, setCourseId] = useState('')
   const [sessions, setSessions] = useState([])
@@ -295,7 +302,7 @@ export default function AttendanceManager() {
         </div>
       )}
 
-      {tab === 'sesi' && (
+      <div style={{ display: tab === 'sesi' ? 'block' : 'none' }}>
         <>
           {loading && <div className="spinner" style={{ margin:'60px auto' }}/>}
           <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
@@ -386,10 +393,14 @@ export default function AttendanceManager() {
             )}
           </div>
         </>
-      )}
+      </div>
 
-      {tab === 'manual'   && <AttendanceManual    courseId={courseId} students={students} />}
-      {tab === 'analitik' && <AttendanceAnalytics courseId={courseId} students={students} />}
+      <div style={{ display: tab === 'manual' ? 'block' : 'none' }}>
+        <AttendanceManual    courseId={courseId} students={students} />
+      </div>
+      <div style={{ display: tab === 'analitik' ? 'block' : 'none' }}>
+        <AttendanceAnalytics courseId={courseId} students={students} />
+      </div>
 
       {/* ── Edit Sesi Modal ──────────────────────────────────── */}
       {editSession && (

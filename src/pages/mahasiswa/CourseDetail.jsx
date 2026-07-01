@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, BookOpen, ClipboardList, MessageSquare, FileText, ExternalLink, Calendar, User, Star, CheckCircle2, Sparkles } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useAI } from '@/contexts/AIContext'
@@ -19,8 +19,17 @@ export default function CourseDetail() {
   const { id } = useParams()
   const { user } = useAuth()
   const navigate  = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [course,   setCourse]   = useState(null)
-  const [tab,      setTab]      = useState('materi')
+  
+  const tab = searchParams.get('tab') || 'materi'
+  const setTab = (newTab) => {
+    setSearchParams(prev => {
+      prev.set('tab', newTab)
+      return prev
+    })
+  }
+
   const [loading,  setLoading]  = useState(true)
 
   useEffect(() => { fetchCourse() }, [id])
@@ -83,11 +92,21 @@ export default function CourseDetail() {
       </div>
 
       {/* Tab content */}
-      {tab === 'materi'  && <MateriTab   courseId={id} userId={user?.id} />}
-      {tab === 'tugas'   && <TugasTab    courseId={id} userId={user?.id} navigate={navigate} />}
-      {tab === 'forum'   && <ForumTab    courseId={id} userId={user?.id} navigate={navigate} />}
-      {tab === 'ujian'   && <UjianTab    courseId={id} userId={user?.id} navigate={navigate} />}
-      {tab === 'absensi' && <AbsensiTab  courseId={id} userId={user?.id} />}
+      <div style={{ display: tab === 'materi' ? 'block' : 'none' }}>
+        <MateriTab courseId={id} userId={user?.id} />
+      </div>
+      <div style={{ display: tab === 'tugas' ? 'block' : 'none' }}>
+        <TugasTab courseId={id} userId={user?.id} navigate={navigate} />
+      </div>
+      <div style={{ display: tab === 'forum' ? 'block' : 'none' }}>
+        <ForumTab courseId={id} userId={user?.id} navigate={navigate} />
+      </div>
+      <div style={{ display: tab === 'ujian' ? 'block' : 'none' }}>
+        <UjianTab courseId={id} userId={user?.id} navigate={navigate} />
+      </div>
+      <div style={{ display: tab === 'absensi' ? 'block' : 'none' }}>
+        <AbsensiTab courseId={id} userId={user?.id} />
+      </div>
     </div>
   )
 }
